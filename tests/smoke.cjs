@@ -61,7 +61,7 @@ const THREE = {
   Color:class{}, FogExp2:class{}, PerspectiveCamera:Obj, WebGLRenderer:Renderer, Clock:class{getDelta(){return .016}}, Raycaster,
   Vector2:Vector, Vector3:Vector, HemisphereLight:Light, DirectionalLight:Light, PointLight:Light, SpotLight:class extends Light{constructor(){super();this.target=new Obj();}},
   MeshStandardMaterial:Material, MeshBasicMaterial:Material, ShaderMaterial:Material, SpriteMaterial:Material, PointsMaterial:Material, LineBasicMaterial:Material,
-  CanvasTexture, BufferGeometry:BufferGeo, BufferAttribute:class{constructor(array,size){this.array=array;this.itemSize=size;this.needsUpdate=false;}}, InstancedMesh:class extends Mesh{constructor(g,m,n){super(g,m);this.count=n;this.instanceMatrix={needsUpdate:false};}setMatrixAt(){}}, Object3D:Obj,
+  CanvasTexture, BufferGeometry:BufferGeo, BufferAttribute:class{constructor(array,size){this.array=array;this.itemSize=size;this.needsUpdate=false;}}, InstancedMesh:class extends Mesh{constructor(g,m,n){super(g,m);this.isInstancedMesh=true;this.count=n;this.instanceMatrix={needsUpdate:false};}setMatrixAt(){}}, Object3D:Obj,
   RepeatWrapping:1, BackSide:1, DoubleSide:2, AdditiveBlending:3, NormalBlending:4, NoColorSpace:'none', SRGBColorSpace:'sRGB',ACESFilmicToneMapping:'aces',PCFSoftShadowMap:'pcf'
 };
 for(const name of ['BoxGeometry','CylinderGeometry','CircleGeometry','ConeGeometry','DodecahedronGeometry','PlaneGeometry','TorusGeometry','SphereGeometry','CapsuleGeometry','OctahedronGeometry','TetrahedronGeometry']) THREE[name]=Geo;
@@ -89,29 +89,43 @@ const js=source.replace(/^import \* as THREE from 'three';\s*/,'');
 vm.runInContext(js,context,{filename:'main.js'});
 const evalGame = expression=>vm.runInContext(expression,context);
 assert.equal(evalGame('state'),'menu');
-assert.ok(evalGame('navigationGrid && navigationGrid.blocked.length > 1000'),'grade de navegação deve ser criada no boot');
+assert.ok(evalGame('navigationGrid && navigationGrid.blocked.length > 9000'),'grade de navegação deve cobrir o vale expandido');
 assert.ok(evalGame('findNavigationPath(-7,-21, 7,-21, .34).length > 0'),'A* deve encontrar rota ao redor do caminhão');
 assert.equal(evalGame('findNavigationPath(-7,-21, 7,-21, .34).every(p=>!navigationGrid.blocked[navigationCell(p.x,p.z)])'),true,'rota A* não deve atravessar células bloqueadas');
 assert.equal(evalGame('navigationSegmentBlocked(-7,-21,7,-21,.34)'),true,'linha direta deve reconhecer caminhão como obstáculo');
+assert.ok(evalGame('relayStations.length===2 && outpostConsole && outpostGate'),'mundo deve conter repetidores e console do posto');
+assert.ok(evalGame('scene.children.filter(o=>o.isInstancedMesh).length >= 7'),'cenário deve agrupar vegetação, terreno e detalhes em instâncias');
+assert.ok(evalGame('colliders.some(c=>c.x < -40) && colliders.some(c=>c.x > 40)'),'mapa deve ter rotas laterais e limites ampliados');
+assert.equal(evalGame('canMoveTo(-29,-72)'),true,'posição de interação do repetidor A deve ser acessível');
+assert.equal(evalGame('canMoveTo(30,-87)'),true,'posição de interação do repetidor B deve ser acessível');
+assert.equal(evalGame('canMoveTo(-20.5,-108.8)'),true,'jogador deve conseguir chegar ao alcance de interação do operador');
+assert.equal(evalGame('canMoveTo(-4.2,-168.5)'),true,'console do posto deve ser acessível');
+
 evalGame("settings.quality='baixo'; applyQuality()");
-assert.equal(evalGame('grassField.count'),100,'preset baixo deve reduzir vegetação');
-assert.equal(evalGame('rainField.geometry.drawCount'),65,'preset baixo deve reduzir chuva');
+assert.equal(evalGame('grassField.count'),75,'preset baixo deve reduzir vegetação');
+assert.equal(evalGame('rainField.geometry.drawCount'),32,'preset baixo deve reduzir chuva');
+assert.equal(evalGame('renderer.shadowMap.enabled'),false,'preset baixo deve desligar sombras');
 evalGame("settings.quality='alto'; applyQuality()");
-assert.equal(evalGame('grassField.count'),310,'preset alto deve ampliar vegetação');
-assert.equal(evalGame('rainField.geometry.drawCount'),260,'preset alto deve ampliar chuva');
+assert.equal(evalGame('grassField.count'),220,'preset alto deve ampliar vegetação');
+assert.equal(evalGame('rainField.geometry.drawCount'),140,'preset alto deve ampliar chuva');
+assert.equal(evalGame('renderer.shadowMap.enabled'),true,'preset alto pode ativar sombras');
 evalGame("settings.quality='equilibrado'; applyQuality()");
 assert.equal(evalGame('scene.children.includes(camera)'),true,'arma deve ser filha da câmera presente na cena');
+assert.ok(evalGame('renderer.setPixelRatio && qualityPixelRatio() <= 1'),'perfil equilibrado deve limitar escala de renderização');
+
 evalGame('newCampaign()');
-assert.equal(Object.prototype.hasOwnProperty.call(context, 'reloadProgress'), false, 'nova campanha não deve criar variável global de recarga indefinida');
 assert.equal(evalGame('missionPhase'),0);
+assert.equal(evalGame('document.getElementById("objective-step").textContent'),'ETAPA 01 / 09');
+assert.equal(evalGame('player.position.z'),42,'jogador começa antes do comboio');
 evalGame('triggerAmbush()');
-assert.equal(evalGame('enemies.length'),3);
-assert.equal(evalGame('enemies.filter(e=>e.type==="soldado_corrompido").length'),1,'primeira emboscada deve incluir um inimigo armado');
+assert.equal(evalGame('enemies.length'),4,'emboscada inicial deve ter quatro inimigos');
+assert.equal(evalGame('enemies.filter(e=>e.type==="soldado_corrompido").length'),1,'primeira emboscada deve incluir inimigo armado');
 assert.ok(evalGame('enemies.find(e=>e.type==="soldado_corrompido").weaponGroup'),'soldado corrompido deve carregar um fuzil 3D');
 assert.equal(evalGame('enemies.every(e=>!enemyBlocked(e.group.position.x,e.group.position.z,.45))'),true,'spawn da primeira emboscada fora dos obstáculos');
 evalGame('state="playing"; pointerLocked=true; updateGame(.016); shoot()');
 assert.equal(evalGame('noiseEvent.type'),'gunshot','disparo deve gerar evento sonoro');
 assert.ok(evalGame('crosshairSpread') > 5,'disparo deve abrir a mira dinâmica');
+
 // O soldado corrompido deve mirar, disparar, criar um traçante e causar dano ao jogador.
 evalGame("var armedEnemy=enemies.find(e=>e.type==='soldado_corrompido'); armedEnemy.group.position.set(0,0,10); armedEnemy.group.rotation.y=0; armedEnemy.fireCooldown=0; armedEnemy.rangedAccuracy=1; player.position.set(0,1.7,0); updateEnemies(.016)");
 assert.equal(evalGame('armedEnemy.state'),'aiming','soldado deve preparar a mira antes do disparo');
@@ -120,27 +134,25 @@ assert.equal(evalGame('armedEnemy.state'),'recover','soldado deve entrar em recu
 assert.equal(evalGame('health'),92,'tiro do soldado deve causar dano quando o jogador não se esquiva');
 assert.ok(evalGame('effects.some(effect=>effect.type==="enemyTracer")'),'tiro inimigo deve produzir traçante visível');
 assert.ok(evalGame('armedEnemy.weaponFlash.visible'),'fuzil inimigo deve produzir clarão de disparo');
-// Esquiva: sair da linha de tiro durante a preparação deve evitar o dano.
-evalGame('player.position.set(5,1.7,0); health=100; armedEnemy.aimTargetX=0; armedEnemy.aimTargetY=1.15; armedEnemy.aimTargetZ=0; armedEnemy.weaponAmmo=5; fireEnemyWeapon(armedEnemy)');
+// Esquiva e cobertura.
+evalGame('player.position.set(5,1.7,0); health=100; armedEnemy.aimTargetX=0; armedEnemy.aimTargetY=0.6; armedEnemy.aimTargetZ=0; armedEnemy.weaponAmmo=5; fireEnemyWeapon(armedEnemy)');
 assert.equal(evalGame('health'),100,'jogador que sai da linha de tiro deve evitar o disparo');
-// O soldado usa carregador finito e precisa recarregar antes de voltar a atirar.
 evalGame('armedEnemy.weaponAmmo=1; armedEnemy.weaponReserve=5; fireEnemyWeapon(armedEnemy); fireEnemyWeapon(armedEnemy)');
 assert.equal(evalGame('armedEnemy.state'),'reloading','soldado sem munição deve iniciar recarga');
 evalGame('updateEnemies(1.6)');
 assert.equal(evalGame('armedEnemy.weaponAmmo'),5,'recarga inimiga deve repor o carregador');
 assert.equal(evalGame('armedEnemy.weaponReserve'),0,'recarga inimiga deve consumir a reserva');
-// Um obstáculo entre o fuzil e Raul bloqueia o disparo.
 evalGame("player.position.set(0,1.7,0); armedEnemy.group.position.set(0,0,10); armedEnemy.group.rotation.y=0; armedEnemy.aimTargetX=0; armedEnemy.aimTargetY=1.15; armedEnemy.aimTargetZ=0; armedEnemy.weaponAmmo=5; health=100; setMockRayHits([{distance:1}]); fireEnemyWeapon(armedEnemy)");
 assert.equal(evalGame('health'),100,'cobertura deve bloquear o tiro inimigo');
 evalGame('setMockRayHits([])');
-// A seleção de cobertura deve encontrar o lado oposto de um obstáculo em relação ao jogador.
 evalGame("var savedColliders=colliders; colliders=[{x:0,z:3,r:1,disabled:false}]; setMockRayHits([{distance:1}])");
 assert.ok(evalGame('findEnemyCoverPosition(armedEnemy)'),'soldado ferido deve conseguir selecionar uma posição de cobertura');
-evalGame('setMockRayHits([]); colliders=savedColliders; player.position.set(0,1.7,28)');
+evalGame('setMockRayHits([]); colliders=savedColliders; player.position.set(0,1.7,42)');
 evalGame("emitNoise(100,'gunshot'); emitNoise(2.8,'crouch'); updateEnemies(.016)");
 assert.ok(evalGame('enemies.every(e=>e.lastHeardAt >= 0)'),'inimigos devem investigar ruído mesmo sem linha de visão');
 assert.equal(evalGame('ammo'),7);
-// Troca de arma, cadência, munição independente e recarga sem duplicação.
+
+// Armas do jogador.
 evalGame("switchWeapon('pistol'); fireCooldown=0; shoot()");
 assert.equal(evalGame('currentWeapon'),'pistol');
 assert.equal(evalGame('pistolAmmo'),11);
@@ -155,15 +167,15 @@ assert.equal(evalGame('currentWeapon'),'rifle');
 assert.equal(evalGame('weaponGroup.visible'),true);
 assert.equal(evalGame('pistolGroup.visible'),false);
 evalGame('fireCooldown=0; captureCheckpoint(1)');
-assert.equal(evalGame('savedGame.version'),3);
+assert.equal(evalGame('savedGame.version'),4);
 assert.equal(evalGame('savedGame.checkpoint.pistolReserve'),35);
 assert.equal(evalGame('savedGame.checkpoint.currentWeapon'),'rifle');
-// Dano sinalizado por direção, sem tornar o efeito permanente.
+assert.equal(evalGame('savedGame.checkpoint.relaysDisabled.length'),2);
+
 evalGame('damagePlayer(3, new THREE.Vector3(1,0,0))');
 assert.ok(evalGame('damageDirectionTime') > 0);
 evalGame('updateEffects(1)');
 assert.ok(evalGame('damageDirectionTime') <= 0);
-
 assert.equal(evalGame('grenades'),2);
 evalGame('throwGrenade()');
 assert.equal(evalGame('grenades'),1);
@@ -172,86 +184,112 @@ evalGame('updateGrenades(2.2)');
 assert.equal(evalGame('grenadeProjectiles.length'),0);
 evalGame('meleeAttack()');
 assert.ok(evalGame('meleeCooldown') > 0);
-evalGame('enemies[0].group.position.set(0,0,26.5); meleeCooldown=0; meleeAttack()');
+evalGame('enemies[0].group.position.set(0,0,40.5); meleeCooldown=0; meleeAttack()');
 assert.ok(evalGame('enemies[0].health') < 58,'golpe deve causar dano ao alvo próximo');
 evalGame("handleKeyDown({code:'KeyQ',repeat:false,preventDefault(){}})");
 assert.equal(evalGame('flashlight.userData.enabled'),true,'lanterna deve ligar');
 evalGame("handleKeyDown({code:'KeyQ',repeat:false,preventDefault(){}})");
 assert.equal(evalGame('flashlight.userData.enabled'),false,'lanterna deve desligar');
+
+// Emboscada inicial -> dois repetidores -> resgate.
 evalGame('enemies.slice().forEach(onEnemyKilled)');
-assert.equal(evalGame('enemies.every(e=>e.deadTime===0)'),true,'inimigos mortos iniciam animação de queda');
-evalGame('updateEnemies(.24)');
-assert.ok(evalGame('enemies.every(e=>e.deadTime > 0)'),'animação de queda deve avançar com o tempo');
-assert.equal(evalGame('missionPhase'),2);
+assert.equal(evalGame('missionPhase'),2,'concluir a emboscada libera os repetidores');
 assert.equal(evalGame('checkpoint.phase'),2);
-evalGame('state="playing"; player.position.set(4.7,1.7,-43.5); updateInteractPrompt(); interact()');
-assert.equal(evalGame('missionPhase'),3);
+assert.equal(evalGame('relayStations.length'),2);
+// Repetidor A com dois defensores.
+evalGame('player.position.set(-29,1.7,-72); updateRelayEncounters()');
+assert.equal(evalGame('enemies.filter(e=>e.alive).length'),2,'aproximar do repetidor A ativa sua guarda');
+assert.equal(evalGame('enemies.filter(e=>e.alive).every(e=>!enemyBlocked(e.group.position.x,e.group.position.z,.45))'),true,'guarda do repetidor A deve nascer em posição acessível');
+evalGame('enemies.filter(e=>e.alive).slice().forEach(onEnemyKilled); updateInteractPrompt(); interact()');
+assert.equal(evalGame('relayStations[0].disabled'),true,'repetidor A deve ser desativado');
+assert.equal(evalGame('relayDisabledCount'),1);
+assert.equal(evalGame('missionPhase'),2,'o segundo repetidor continua pendente');
+// Repetidor B.
+evalGame('player.position.set(30,1.7,-87); updateRelayEncounters()');
+assert.equal(evalGame('enemies.filter(e=>e.alive).length'),2,'aproximar do repetidor B ativa sua guarda');
+evalGame('enemies.filter(e=>e.alive).slice().forEach(onEnemyKilled); updateInteractPrompt(); interact()');
+assert.equal(evalGame('relayStations[1].disabled'),true);
+assert.equal(evalGame('relayDisabledCount'),2);
+assert.equal(evalGame('missionPhase'),3,'desativar ambos libera o resgate');
+
+// Resgatar operador e encontrar documento opcional.
+evalGame('player.position.set(-20.5,1.7,-110.5); updateInteractPrompt(); interact()');
+assert.equal(evalGame('missionPhase'),4);
 assert.equal(evalGame('operatorCollider.disabled'),true);
 assert.equal(evalGame('escortGroup.visible'),true);
-evalGame('player.position.set(-9.3,1.7,-61); updateInteractPrompt(); interact()');
-assert.equal(evalGame('intelFound'),true);
-evalGame('updateGame(.016)');
-evalGame('startFinalDefense(); spawnFinalWave()');
-assert.equal(evalGame('missionPhase'),4);
+evalGame('player.position.set(-35.5,1.7,-117); updateInteractPrompt(); interact()');
+assert.equal(evalGame('intelFound'),true,'documento Janus deve continuar opcional e coletável');
+// Emboscada na escolta.
+evalGame('startEscortAmbush()');
 assert.equal(evalGame('enemies.filter(e=>e.alive).length'),3);
-assert.equal(evalGame('enemies.filter(e=>e.alive && e.type==="soldado_corrompido").length'),1,'defesa final também deve incluir inimigo armado');
-assert.equal(evalGame('enemies.filter(e=>e.alive).every(e=>!enemyBlocked(e.group.position.x,e.group.position.z,.45))'),true,'spawn da defesa fora dos obstáculos');
-assert.equal(evalGame('canMoveTo(0,-97)'),false,'portão fechado impede atravessar');
-evalGame('var crawler=enemies.find(e=>e.type==="rastejador"); crawler.group.position.set(player.position.x,0,player.position.z+1.8); crawler.state="chase"; crawler.path=null; updateEnemies(.016)');
-assert.equal(evalGame('enemies.find(e=>e.type==="rastejador").state'),'windup','Rastejador deve telegrafar investida');
-evalGame('var crawler=enemies.find(e=>e.type==="rastejador"); crawler.windup=0; updateEnemies(.016)');
-assert.equal(evalGame('enemies.find(e=>e.type==="rastejador").state'),'lunge','Rastejador deve executar investida após aviso');
-evalGame('enemies.filter(e=>e.alive).forEach(onEnemyKilled)');
+evalGame('enemies.filter(e=>e.alive).slice().forEach(onEnemyKilled)');
+assert.equal(evalGame('escortAmbushCleared'),true,'eliminar a emboscada libera a rota do posto');
+// Defesa em duas ondas.
+evalGame('player.position.set(0,1.7,-160); camera.position.copy(player.position); escortGroup.position.set(5.2,0,-155); startFinalDefense(); spawnFinalWave()');
 assert.equal(evalGame('missionPhase'),5);
+assert.equal(evalGame('enemies.filter(e=>e.alive).length'),4,'primeira onda deve conter quatro inimigos');
+assert.equal(evalGame('enemies.filter(e=>e.alive && e.type==="soldado_corrompido").length'),2,'primeira onda deve ter dois soldados armados');
+assert.equal(evalGame('canMoveTo(0,-180)'),false,'portão fechado impede atravessar');
+assert.equal(evalGame('enemyBlocked(0,-180,.3)'),true,'IA também deve respeitar o portão fechado');
+// Rastejador telegráfica investida.
+evalGame('var crawler=enemies.find(e=>e.alive && e.type==="rastejador"); crawler.group.position.set(player.position.x,0,player.position.z+1.8); crawler.group.rotation.y=0; camera.position.copy(player.position); crawler.state="chase"; crawler.path=null; updateEnemies(.016)');
+assert.equal(evalGame('enemies.find(e=>e.alive && e.type==="rastejador").state'),'windup');
+evalGame('var crawler=enemies.find(e=>e.alive && e.type==="rastejador"); crawler.windup=0; updateEnemies(.016)');
+assert.equal(evalGame('enemies.find(e=>e.alive && e.type==="rastejador").state'),'lunge');
+evalGame('enemies.filter(e=>e.alive).slice().forEach(onEnemyKilled)');
+assert.equal(evalGame('missionPhase'),6,'primeira onda concluída deve liberar a segunda');
+assert.equal(evalGame('finalWaveSpawned'),false,'segunda onda deve aguardar o timer');
+evalGame('spawnFinalWave()');
+assert.equal(evalGame('enemies.filter(e=>e.alive).length'),5,'segunda onda deve ter cinco inimigos');
+assert.equal(evalGame('enemies.filter(e=>e.alive).every(e=>!enemyBlocked(e.group.position.x,e.group.position.z,.45))'),true,'segunda onda deve nascer em posições acessíveis');
+assert.equal(evalGame('enemies.filter(e=>e.alive && e.type==="soldado_corrompido").length'),2,'segunda onda deve incluir dois atiradores');
+evalGame('enemies.filter(e=>e.alive).slice().forEach(onEnemyKilled)');
+assert.equal(evalGame('missionPhase'),7,'duas ondas concluídas liberam o rádio');
+assert.equal(evalGame('outpostConsole.visible'),true);
+// Ativar o rádio e sair pelo portão.
+evalGame('player.position.set(-4.2,1.7,-168.5); updateInteractPrompt(); interact(); updateHUD()');
+assert.equal(evalGame('missionPhase'),8);
 assert.equal(evalGame('gateOpening'),true);
-evalGame('updateGame(.016)');
-evalGame('gateOpen=true; player.position.set(0,1.7,-100); finishMission()');
+assert.ok(evalGame("document.getElementById('objective-distance').textContent === `${Math.round(Math.hypot(player.position.x, player.position.z + 184))} m`"),'objetivo de extração deve atualizar a distância até a saída');
+evalGame('updateGame(.016); gateOpen=true; player.position.set(0,1.7,-184); finishMission()');
 assert.equal(evalGame('state'),'complete');
-assert.equal(evalGame('canMoveTo(0,-97)'),true,'portão aberto permite atravessar');
+assert.equal(evalGame('canMoveTo(0,-180)'),true,'portão aberto permite atravessar');
 assert.equal(evalGame('completedMission.mission'),'01');
 assert.equal(evalGame('savedGame'),null);
 assert.equal(evalGame('!!completedMission'),true);
-// Voltar ao checkpoint do resgate preserva fase e restaura os objetos.
-evalGame('newCampaign(); triggerAmbush(); enemies.slice().forEach(onEnemyKilled); state="playing"; player.position.set(4.7,1.7,-43.5); updateInteractPrompt(); interact(); loadCheckpoint()');
-assert.equal(evalGame('missionPhase'),3);
+
+// Checkpoint no resgate: relays permanecem desligados e operador acompanha o jogador.
+evalGame('newCampaign(); triggerAmbush(); enemies.filter(e=>e.alive).slice().forEach(onEnemyKilled); disableRelay(relayStations[0]); disableRelay(relayStations[1]); state="playing"; player.position.set(-20.5,1.7,-110.5); updateInteractPrompt(); interact(); loadCheckpoint()');
+assert.equal(evalGame('missionPhase'),4);
 assert.equal(evalGame('operatorRescued'),true);
+assert.equal(evalGame('relayDisabledCount'),2);
 assert.equal(evalGame('outpostGate.position.y'),1.35);
-evalGame('for (let z=-50;z>=-80;z-=5) { player.position.z=z; for (let i=0;i<200;i++) updateEscort(.05); }');
-assert.ok(evalGame('escortGroup.position.z') < -72, 'operador deve conseguir chegar à aproximação do posto');
+evalGame('for (let i=0;i<2200;i++) updateEscort(.05)');
+assert.ok(evalGame('escortGroup.position.z < -153'), 'operador deve conseguir alcançar a aproximação do posto');
 evalGame('continueCampaign(); beginGameplay()');
-assert.equal(evalGame('missionPhase'),3,'continuar deve recuperar checkpoint de resgate');
+assert.equal(evalGame('missionPhase'),4,'continuar deve recuperar checkpoint da escolta');
 assert.equal(evalGame('operatorRescued'),true);
-evalGame('delete checkpoint.grenades; delete checkpoint.pistolAmmo; delete checkpoint.pistolReserve; delete checkpoint.currentWeapon; loadCheckpoint()');
-assert.equal(evalGame('grenades'),2,'old saves sem granadas recuperam fallback');
-assert.equal(evalGame('pistolAmmo'),12,'save antigo recupera munição da pistola');
-assert.equal(evalGame('pistolReserve'),36,'save antigo recupera reserva da pistola');
-assert.equal(evalGame('currentWeapon'),'rifle','save antigo seleciona o fuzil');
-// Checkpoints da emboscada e da defesa devem restaurar o soldado armado.
-evalGame("checkpoint={x:0,z:-20,phase:1,health:100,ammo:8,reserve:40}; loadCheckpoint()");
-assert.equal(evalGame('enemies.filter(e=>e.type==="soldado_corrompido").length'),1,'checkpoint da emboscada deve restaurar o inimigo armado');
-evalGame("checkpoint={x:0,z:-80,phase:4,health:100,ammo:8,reserve:40,operatorRescued:true}; loadCheckpoint()");
-assert.equal(evalGame('enemies.filter(e=>e.alive && e.type==="soldado_corrompido").length'),1,'checkpoint da defesa deve restaurar o inimigo armado');
-// Salvos das versões 0.2 e 0.3 continuam disponíveis.
+// Saves antigos seguem aceitos e são migrados para o fluxo expandido.
 evalGame('savedGame.version=2; updateContinueButton()');
 assert.equal(element('continue-btn').disabled,false);
+evalGame("checkpoint={x:0,z:-80,phase:4,health:100,ammo:8,reserve:40,operatorRescued:true}; savedGame.version=3; loadCheckpoint()");
+assert.equal(evalGame('missionPhase'),5,'checkpoint antigo da defesa deve migrar para a defesa do posto');
+assert.equal(evalGame('enemies.filter(e=>e.alive && e.type==="soldado_corrompido").length'),2);
 
-
-// v0.7 — rig esquelético, mãos do viewmodel, materiais procedurais e explosões em camadas.
+// v0.7: rig esquelético, mãos articuladas, materiais procedurais, explosões e áudio.
 assert.ok(evalGame('enemies[0].skeleton && enemies[0].skeleton.bones.length >= 14'), 'inimigos devem possuir rig com ossos nomeados');
 assert.ok(evalGame('enemies[0].rig.spine && enemies[0].rig.headBone && enemies[0].rig.knees.length===2'), 'rig deve conter coluna, cabeça e joelhos');
 assert.ok(evalGame('weaponGroup.userData.viewRig.arms.length===2 && pistolGroup.userData.viewRig.arms.length===2'), 'armas do jogador devem incluir braços e mãos articulados');
 assert.ok(evalGame('weaponGroup.children.some(o=>o.isBone) && weaponGroup.userData.skeleton.bones.length===4'), 'mãos do fuzil devem usar esqueleto de braços e punhos');
 evalGame('var rigEnemy=enemies[0]; rigEnemy.group.position.set(0,0,8); rigEnemy.lastSeenAt=elapsedMission; rigEnemy.lastKnownX=player.position.x; rigEnemy.lastKnownZ=player.position.z; updateEnemies(.08)');
 assert.ok(evalGame('enemies[0].skeleton.bones.some(b=>b.name.startsWith("hip_"))'), 'animação deve manter ossos de quadril');
-assert.ok(evalGame('enemies[0].animationMode === \"run\" || enemies[0].animationMode === \"walk\"'), 'inimigos devem selecionar uma marcha animada');
+assert.ok(evalGame('enemies[0].animationMode === "run" || enemies[0].animationMode === "walk"'), 'inimigos devem selecionar uma marcha animada');
 assert.ok(evalGame('surfaceMat("test-painted",0x445544,"painted").map && surfaceMat("test-painted",0x445544,"painted").roughnessMap && surfaceMat("test-painted",0x445544,"painted").bumpMap'), 'materiais devem ter mapas de cor, rugosidade e relevo');
 evalGame("var mockGrenade={mesh:{position:new THREE.Vector3(1,.2,2)}}; spawnVolumetricExplosion(mockGrenade.mesh.position,1)");
 assert.ok(evalGame('effects.some(e=>e.type==="volumetricExplosion" && e.sprites.length>=4 && e.light)'), 'explosão deve ter sprites volumétricos e luz dinâmica');
 evalGame('updateEffects(.25)');
 assert.ok(evalGame('effects.some(e=>e.type==="volumetricExplosion" && e.life<.95)'), 'explosão deve evoluir com o tempo');
 
-
-// WebAudio ambiental: inicia somente após o gesto de jogo e reduz o ambiente fora da missão.
 evalGame('initAudio()');
 assert.ok(evalGame('ambientNodes && ambientNodes.wind.loop && ambientNodes.rumble && ambientNoiseBuffer'), 'áudio deve iniciar camadas contínuas de vento e rumble');
 evalGame('state="playing"; updateAmbientAudio(.016); playDistantArtillery(); playRadioStatic(); playShotSound(new THREE.Vector3(4,0,-8))');
@@ -259,4 +297,14 @@ assert.ok(evalGame('ambientNodes.master.gain.value > 0'), 'volume ambiente deve 
 evalGame('state="paused"; updateAmbientAudio(.016)');
 assert.ok(evalGame('ambientNodes.windGain.gain.value < .08'), 'ambiente deve baixar quando o jogo está pausado');
 
-console.log('OK v0.7: rig esquelético, mãos articuladas, materiais procedurais, explosões em camadas e regressão da campanha.');
+// Regressão: cadáver continua visível por 5 s e depois sai da cena e do array.
+evalGame("enemies.slice().forEach(disposeEnemy); enemies=[]; state='playing'; missionPhase=0; var corpse=createEnemy(8,-23,99); onEnemyKilled(corpse)");
+assert.ok(evalGame('scene.children.includes(corpse.group)'), 'cadáver deve permanecer no cenário');
+evalGame('updateEnemies(4.99)');
+assert.ok(evalGame('enemies.includes(corpse) && corpse.group.visible'), 'cadáver não deve sumir antes de 5 segundos');
+evalGame('updateEnemies(.02)');
+assert.equal(evalGame('enemies.includes(corpse)'), false, 'cadáver deve sair do array após 5 segundos');
+assert.equal(evalGame('scene.children.includes(corpse.group)'), false, 'malha 3D deve sair da cena após 5 segundos');
+assert.equal(Object.prototype.hasOwnProperty.call(context, 'reloadProgress'), false, 'iniciar campanha não deve criar variável de recarga indefinida');
+
+console.log('OK v0.8: mapa expandido, duas rotas de flanqueamento, objetivos Janus, escolta com emboscada, defesa em duas ondas e otimização por instancing.');

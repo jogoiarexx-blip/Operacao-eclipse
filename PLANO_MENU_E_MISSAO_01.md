@@ -265,3 +265,23 @@ A interface não deve depender exclusivamente de cor para transmitir informaçã
 5. Trocar o áudio sintetizado por bibliotecas de passos, ambiente, disparo, impacto e rádio.
 6. Adicionar carregamento por setor e perfil de telemetria para FPS, draw calls e tempo de frame.
 7. Realizar testes reais em hardware baixo, equilibrado e alto antes de fixar os valores de orçamento de performance.
+
+---
+
+## Adendo de produção — v0.8.0
+
+A avaliação do protótipo apontou três problemas: fase estreita, ritmo muito linear e custo gráfico alto em relação à quantidade de gameplay. A missão foi reestruturada em uma área de combate semi-linear com duas rotas laterais e quatro setores.
+
+### Novos objetivos
+- Neutralizar a emboscada do comboio.
+- Desativar os repetidores Janus A e B, cada um com defensores.
+- Resgatar o operador na fazenda.
+- Escoltar o operador e neutralizar uma emboscada na curva.
+- Defender o posto em duas ondas.
+- Ativar o rádio e alcançar a extração.
+
+### Critério de direção
+A campanha continua linear em escala macro, mas os encontros deixam de acontecer em um corredor único. Cada arena oferece cobertura e pelo menos uma rota de flanqueamento. A próxima missão só deve ser produzida depois de validar ritmo, navegação, legibilidade de objetivos e desempenho desta fase.
+
+### Critério de desempenho
+A qualidade Equilibrada deve ser o ponto de partida. Objetos repetidos são instanciados, sombras dinâmicas ficam restritas ao preset Alto e a resolução interna é limitada por preset. O overlay F3 permite comparar draw calls, triângulos e FPS durante os encontros.

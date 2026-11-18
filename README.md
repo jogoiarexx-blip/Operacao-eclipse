@@ -1,61 +1,56 @@
 # OPERAÇÃO ECLIPSE — A Guerra dos Esquecidos
 
-**Build 0.7.0 · Missão 01: Cinzas na Estrada · preparada para GitHub Pages**
+**Build 0.8.0 · Missão 01: Cinzas na Estrada · preparado para GitHub Pages**
 
-Protótipo de FPS de campanha para navegador em JavaScript + Three.js 0.169.0, baseado no `GDD_REFERENCIA.md`. A missão 01 inclui investigação do comboio, emboscada, resgate, escolta, defesa do posto, extração e tela de conclusão.
+FPS de campanha para navegador, desenvolvido em JavaScript + Three.js 0.169.0. Esta versão reformula a primeira missão para ser uma fase de ação mais ampla, com objetivos encadeados, arenas de combate, rotas de flanqueamento e um orçamento gráfico mais controlado.
 
-## Novidades da versão 0.7.0
+## O que mudou na v0.8.0
 
-### Animação e apresentação
-- Rig esquelético procedural com ossos nomeados e animações de caminhada, corrida, ataque, mira, recarga, impacto e morte.
-- Operador de rádio animado por ossos durante a escolta.
-- Mãos do jogador em primeira pessoa com mangas, luvas e dedos segmentados; armas com novos detalhes geométricos.
-- Explosões volumétricas em camadas com sprites, esfera de energia, onda de choque e luz dinâmica.
-- Iluminação cinematográfica com preenchimento frio, fogo quente, feixes atmosféricos e flicker.
-- Texturas procedurais para pintura, metal oxidado, lona, madeira, pedra, reboco, areia e borracha, com mapas de rugosidade e relevo.
-- Áudio ambiental WebAudio: vento, rumble, interferência Janus, artilharia distante, estática de rádio e disparos com panorama estéreo.
+### Fase maior e com objetivos reais
+- O vale foi ampliado para aproximadamente 96 m de largura jogável e 230 m de extensão de rota.
+- A estrada principal agora se conecta a duas rotas laterais, com coberturas, barricadas, ruínas, casas e posições de combate.
+- O percurso tem quatro setores: comboio destruído, repetidores Janus, fazenda em ruínas e posto avançado Nébula.
+- A missão deixa de ser apenas eliminar inimigos e resgatar o operador: exige desativar dois repetidores protegidos, escoltar o operador, sobreviver a uma emboscada e defender o posto em duas ondas antes de ativar o rádio e alcançar a extração. O HUD agora exibe etapa 01/09 e uma barra de progresso.
+- Documento Janus e caixas de suprimentos permanecem como recompensas opcionais de exploração.
 
-## Novidades da versão 0.6.0
+### Sequência de objetivos
+1. Avançar até o comboio e sobreviver à emboscada inicial de quatro inimigos.
+2. Desativar o repetidor Janus A e o repetidor B. Cada posição tem uma pequena guarda inimiga.
+3. Resgatar o operador de rádio na fazenda em ruínas.
+4. Escoltar o operador até o posto. Uma emboscada de três inimigos acontece na curva da estrada.
+5. Defender o posto contra duas ondas: quatro inimigos na primeira e cinco na segunda.
+6. Ativar o rádio de emergência no console do posto.
+7. Atravessar o portão e alcançar a zona de extração.
 
-### Inimigo armado: Soldado Corrompido
-- Novo arquétipo humanoide com fuzil procedural visível nas mãos, capacete, uniforme deteriorado e brilho violeta.
-- Entra na primeira emboscada e retorna na defesa do posto; Errantes e Rastejador continuam como ameaças de combate próximo.
-- Mantém distância, prepara a mira por cerca de um segundo e só então dispara. O aviso visual dá tempo para o jogador sair da linha de tiro ou buscar cobertura.
-- Disparos inimigos usam traçantes, clarão no cano, dano escalonado pela dificuldade e verificação de obstáculos: caminhões, muros e barricadas podem bloquear tiros.
-- O soldado tem carregador de 5 tiros e reserva de 20; recarrega antes de voltar a atirar.
-- Quando ferido, pode procurar uma posição atrás de obstáculos registrados como cobertura.
-- O soldado armado permanece em modelo 3D mesmo à distância para que o fuzil não desapareça na transição para impostor 2D.
-- Checkpoints da primeira emboscada e da defesa recriam o tipo correto de inimigo.
+### Otimização de desempenho
+- Árvores, copas, rochas, colinas, marcas da estrada, poças e manchas do terreno foram agrupadas com `InstancedMesh` para reduzir chamadas de desenho.
+- Perfil Equilibrado limita a escala de renderização a 1.0 e desativa sombras dinâmicas.
+- Perfil Baixo usa escala máxima de 0.78, menos vegetação e menos partículas.
+- Perfil Alto permite escala até 1.25 e sombras da luz principal.
+- Chuva, poeira e vegetação reduzem sua densidade conforme o preset; a atualização da chuva acompanha a quantidade efetivamente desenhada.
+- O HUD atualiza em intervalos curtos, em vez de reescrever todos os elementos a cada quadro.
+- Corpos inimigos deixam de atualizar a animação após o tempo de queda e são ocultados.
 
-### Mantido da versão 0.5.0
+### Mantido das versões anteriores
+- Fuzil e pistola com munição independente, ADS, recarga, granadas, golpe corpo a corpo e lanterna.
+- Soldado Corrompido armado, Errante e Rastejador com IA, ataques e feedback visual.
+- A* em grade, investigação de ruídos, linha de visão, cobertura e projéteis inimigos.
+- Rig esquelético procedural, mãos em primeira pessoa, explosões em camadas, materiais procedurais e áudio WebAudio.
+- Checkpoints, salvamento local e migração dos saves das versões anteriores.
 
+## Setores e coordenadas de referência
 
-### IA e navegação
-- Navegação A* em grade construída a partir dos obstáculos do cenário.
-- Errantes, Rastejador e Soldado Corrompido contornam caminhões, barricadas, caixas e ruínas em vez de tentar atravessá-los.
-- O operador resgatado usa a mesma navegação para acompanhar Raul e reduzir situações de bloqueio.
-- Rotas são suavizadas e atualizadas em intervalos controlados para limitar custo de CPU.
+| Setor | Referência aproximada | Função |
+|---|---:|---|
+| Comboio | z = -20 a -55 | Tutorial de combate e primeira emboscada |
+| Repetidor A | x = -29, z = -72 | Combate lateral e sabotagem |
+| Repetidor B | x = 30, z = -87 | Segunda posição de sabotagem |
+| Fazenda | x = -20.5, z = -110.5 | Resgate do operador e documento opcional |
+| Curva da estrada | z = -132 a -144 | Emboscada durante a escolta |
+| Posto Nébula | z = -174 | Defesa em duas ondas e console de rádio |
+| Extração | z menor que -183.5 | Encerramento da missão |
 
-### Percepção e furtividade
-- Criaturas detectam o jogador por visão e por ruído.
-- Disparos têm grande alcance sonoro; corrida gera mais ruído que caminhada; agachar reduz o ruído.
-- Agachar também reduz a distância de detecção visual.
-- Ao perder o contato, as criaturas investigam a última posição conhecida e depois entram em busca, em vez de rastrear a posição exata do jogador através de paredes.
-- Rastejador executa uma investida curta e telegrafada, com oportunidade de esquiva.
-
-### Feedback visual e combate
-- Mira dinâmica abre com disparos e movimento e fecha ao estabilizar ou mirar.
-- Inimigos caem gradualmente ao morrer, em vez de mudar de pose instantaneamente.
-- Indicador de assinatura sonora mostra o risco atual de ser ouvido.
-- Mantidos fuzil, pistola, ADS, recarga independente, granadas, golpe corpo a corpo, lanterna, checkpoints e estatísticas.
-
-## Fluxo da Missão 01
-1. Investigar o comboio destruído.
-2. Sobreviver à emboscada de dois Errantes e um Soldado Corrompido armado.
-3. Encontrar e resgatar o operador de rádio.
-4. Escoltar o operador até o posto avançado.
-5. Defender o posto contra um Soldado Corrompido armado, um Errante e um Rastejador.
-6. Atravessar o portão e concluir a missão.
+As coordenadas são referências internas de implementação, não um mapa métrico de navegação real.
 
 ## Controles
 
@@ -66,14 +61,20 @@ Protótipo de FPS de campanha para navegador em JavaScript + Three.js 0.169.0, b
 | `1`, `2` ou roda | Trocar fuzil e pistola |
 | `R` | Recarregar |
 | Shift / Ctrl / Espaço | Correr / agachar / pular |
-| `E` | Interagir / coletar |
+| `E` | Interagir, desativar repetidor, resgatar ou ativar console |
 | `F` / `G` / `Q` | Golpe / granada / lanterna |
 | Tab / Esc | Mapa tático / pausa |
 | `F3` | Diagnóstico de desempenho |
 
 ## Executar localmente
 
-Na pasta do projeto, execute `python -m http.server 8000` e abra `http://localhost:8000`. É necessária conexão com a internet para carregar Three.js pela CDN.
+Na raiz do projeto:
+
+```bash
+python -m http.server 8000
+```
+
+Abra `http://localhost:8000`. É necessária conexão com a internet para carregar Three.js pela CDN.
 
 ## Publicar no GitHub Pages
 
@@ -88,15 +89,17 @@ node --check src/main.js
 node tests/smoke.cjs
 ```
 
-O smoke test usa simulador mínimo de Three.js/DOM. Ele verifica lógica, não renderiza WebGL. Faça também os testes manuais em `TESTES_MANUAIS.md`.
+O smoke test usa simulador mínimo de Three.js/DOM. Ele verifica a lógica de missão, salvamento, navegação, armas e objetivos; não renderiza WebGL nem mede FPS real. Siga também `TESTES_MANUAIS.md`.
 
 ## Limitações conhecidas
-- Modelos, rigs e animações são procedurais e estilizados; não há captura de movimento nem modelos externos GLB nesta build. As explosões volumétricas são sprites e malhas em camadas, não raymarching volumétrico. O áudio ambiente é sintetizado via WebAudio, sem gravações de campo.
-- A navegação A* é uma grade 2D simplificada baseada em colisores circulares; não substitui uma navmesh 3D.
-- A percepção usa linha de visão dos objetos registrados como cobertura e ruído simplificado. A busca de cobertura do Soldado Corrompido depende dos obstáculos com colisores cadastrados.
-- A campanha 02–12 ainda não está implementada.
+
+- Modelos, rigs e animações são procedurais e estilizados; não há modelos externos GLB nem captura de movimento nesta build.
+- As explosões são sprites e malhas em camadas, não simulação volumétrica física.
+- A IA usa uma grade A* 2D simplificada, não uma navmesh 3D.
+- O áudio é sintetizado por WebAudio; ainda não usa gravações de campo ou mixagem final.
+- A Missão 01 é a única missão jogável nesta build; as missões 02–12 ainda não foram implementadas.
 - O progresso fica no `localStorage` deste navegador/dispositivo.
 - A CDN exige internet; não há modo offline completo.
-- Desempenho e compatibilidade WebGL exigem teste em navegadores e GPUs reais.
+- O desempenho final precisa ser medido em navegadores e GPUs reais. O ambiente de teste automatizado não substitui a validação WebGL.
 
 A história é ficção alternativa, sem representação de batalhas ou operações reais.

@@ -1,30 +1,60 @@
-# Roteiro de testes manuais — v0.7.0
+# Roteiro de testes manuais — v0.8.0
 
-## Navegador / WebGL
-- [ ] Abrir `index.html` por servidor local ou GitHub Pages.
-- [ ] Confirmar céu, neblina, feixes atmosféricos e iluminação quente/fria.
-- [ ] Iniciar campanha e verificar que o fuzil mostra mãos, mangas e dedos.
-- [ ] Trocar para pistola e confirmar a mão/arma correspondentes.
-- [ ] Caminhar, correr, mirar e recarregar: braços e arma devem acompanhar o movimento.
-- [ ] Acionar emboscada: Errantes e Soldado Corrompido devem animar pernas, ombros, cotovelos e coluna.
-- [ ] Observar preparação de ataque, mira, recarga e morte dos inimigos.
-- [ ] Resgatar operador e verificar animação esquelética durante a escolta.
-- [ ] Arremessar granada: verificar camadas de fogo/fumaça, anel de choque, clarão e luz decrescente.
-- [ ] Verificar textura de caminhões, casa, lona, sacos de areia e terreno a curta distância.
+## Inicialização e desempenho
+- [ ] Abrir o jogo por servidor local e confirmar que o menu aparece sem erros.
+- [ ] Iniciar a missão e confirmar estrada, vale ampliado, duas rotas laterais, casas, colinas e posto distante.
+- [ ] Testar os presets Baixo, Equilibrado e Alto; observar diferença de nitidez, sombras e densidade de partículas.
+- [ ] Abrir `F3` e observar FPS, draw calls e triângulos em cada setor.
+- [ ] Confirmar que o jogador não atravessa os limites do vale nem a grade do posto antes da abertura.
+- [ ] Testar `Tab`: o mapa deve mostrar comboio, dois repetidores, fazenda e posto.
 
-## Áudio / WebAudio
-- [ ] Após iniciar a missão, confirmar vento/rumble de fundo.
-- [ ] Aproximar-se de anomalias Janus e verificar aumento de interferência.
-- [ ] Abrir diálogo de rádio e ouvir estática curta.
-- [ ] Disparar e confirmar som; ouvir disparos inimigos com panorama estéreo.
-- [ ] Aguardar artilharia distante aleatória.
-- [ ] Ajustar volume a zero e confirmar silêncio.
+## Setor 1 — Comboio
+- [ ] Avançar até o comboio e confirmar o gatilho da emboscada.
+- [ ] Confirmar quatro inimigos: dois Errantes, um Soldado Corrompido e um Rastejador.
+- [ ] Usar os caminhões e sacos de areia como cobertura.
+- [ ] Confirmar que eliminar os quatro libera o objetivo dos repetidores.
+
+## Setor 2 — Repetidores Janus
+- [ ] Ir ao repetidor A pela rota lateral esquerda.
+- [ ] Confirmar que a guarda de dois inimigos aparece ao aproximar-se.
+- [ ] Confirmar que o prompt de interação não aparece enquanto os defensores estiverem vivos.
+- [ ] Eliminar a guarda, pressionar `E` e confirmar que A fica desativado.
+- [ ] Ir ao repetidor B pela rota lateral direita e repetir o processo.
+- [ ] Morrer depois de desativar apenas um repetidor e confirmar que o checkpoint preserva o progresso.
+
+## Setor 3 — Fazenda e resgate
+- [ ] Localizar a fazenda em ruínas e o operador.
+- [ ] Resgatar o operador com `E`.
+- [ ] Confirmar que o operador acompanha o jogador e contorna obstáculos.
+- [ ] Encontrar o documento Janus opcional e conferir o contador.
+
+## Setor 4 — Emboscada da escolta
+- [ ] Avançar com o operador até a curva.
+- [ ] Confirmar emboscada com soldado armado, Errante e Rastejador.
+- [ ] Eliminar os três e confirmar a mensagem de rota liberada.
+- [ ] Confirmar que o checkpoint não repete a emboscada depois de concluída.
+
+## Setor 5 — Posto Nébula
+- [ ] Chegar ao posto com o operador.
+- [ ] Confirmar a primeira onda com quatro inimigos.
+- [ ] Eliminar a primeira onda e confirmar a pausa para recarga.
+- [ ] Confirmar a segunda onda com cinco inimigos.
+- [ ] Eliminar a segunda onda e confirmar que o console de rádio fica disponível.
+- [ ] Morrer durante cada onda e confirmar que o checkpoint recria a onda correta.
+
+## Extração
+- [ ] Ativar o console com `E`.
+- [ ] Confirmar animação do portão.
+- [ ] Confirmar que a barreira bloqueia passagem antes de abrir.
+- [ ] Cruzar o portão e alcançar o ponto de extração.
+- [ ] Conferir tela de conclusão, eliminações, precisão e documento coletado.
 
 ## Regressão
-- [ ] Completar missão e conferir estatísticas.
-- [ ] Reiniciar checkpoint e continuar campanha.
-- [ ] Testar presets Baixo, Equilibrado e Alto.
-- [ ] Testar opção reduzir movimento.
+- [ ] Trocar entre fuzil e pistola, mirar, disparar e recarregar.
+- [ ] Usar granadas, golpe corpo a corpo e lanterna.
+- [ ] Testar continuar campanha, reiniciar checkpoint e iniciar nova campanha.
+- [ ] Testar migração de um save antigo v0.7.
+- [ ] Confirmar vento, disparos, rádio e efeitos ambientais; testar volume zero.
 - [ ] Conferir console do navegador sem exceções.
 
-Observação: o projeto não foi validado visualmente em todos os navegadores; marcar os itens apenas após execução real.
+Observação: o teste automatizado não substitui esta execução real em navegador com WebGL e WebAudio.

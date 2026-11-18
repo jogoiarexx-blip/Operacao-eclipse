@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-// OPERAÇÃO ECLIPSE — Missão 01 aprimorada, build 0.7.0 para GitHub Pages.
+// OPERAÇÃO ECLIPSE — Missão 01 ampliada e otimizada, build 0.8.0 para GitHub Pages.
 // Simulação, navegação e apresentação permanecem desacopladas para facilitar a expansão da campanha.
 
 const $ = (id) => document.getElementById(id);
@@ -18,7 +18,7 @@ const ui = {
 
 const SAVE_KEY = 'operacao-eclipse-save-v1';
 const COMPLETION_KEY = 'operacao-eclipse-completion-v1';
-const TOTAL_ENEMIES = 6;
+const TOTAL_ENEMIES = 20;
 const WEAPONS = Object.freeze({
   rifle: { label: 'FUZIL SEMIAUTOMÁTICO', magSize: 8, reload: 1.55, cadence: .34, damage: 29, headDamage: 42, spreadHip: .018, spreadADS: .0035, kick: .085 },
   pistol: { label: 'PISTOLA DE SERVIÇO', magSize: 12, reload: 1.22, cadence: .22, damage: 19, headDamage: 31, spreadHip: .028, spreadADS: .007, kick: .053 }
@@ -72,6 +72,13 @@ let damageDirectionTime = 0;
 let weatherClock = 0;
 let debugVisible = false;
 let missionPhase = 0;
+let relayStations = [];
+let relayDisabledCount = 0;
+let escortAmbushTriggered = false;
+let escortAmbushCleared = false;
+let defenseWave = 0;
+let outpostConsole = null;
+let hudUpdateTimer = 0;
 let operatorRescued = false;
 let ambushTriggered = false;
 let missionComplete = false;
@@ -121,6 +128,7 @@ let surfaceTextures = {};
 let environmentPulse = 0;
 let activeInteractable = null;
 let checkpoint = null;
+const ENEMY_CORPSE_SECONDS = 5;
 let enemies = [];
 let pickups = [];
 let colliders = [];
@@ -131,13 +139,14 @@ let infoReturnScreen = null;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9a9b8e);
-scene.fog = new THREE.FogExp2(0x85877d, 0.0095);
+scene.fog = new THREE.FogExp2(0x85877d, 0.0058);
 const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.08, 180);
 camera.rotation.order = 'YXZ';
 scene.add(camera); // Necessário para desenhar a arma, filha da câmera.
 camera.position.set(15, 10, 22);
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== 'baixo', powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, settings.quality === 'baixo' ? 1 : 1.5));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality === 'alto', powerPreference: 'high-performance' });
+const qualityPixelRatio = () => Math.min(window.devicePixelRatio || 1, settings.quality === 'baixo' ? .78 : settings.quality === 'alto' ? 1.25 : 1.0);
+renderer.setPixelRatio(qualityPixelRatio());
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -161,9 +170,14 @@ let shadowUpdateTime = 0;
 let crosshairSpread = 5;
 function disposeEnemy(enemy) {
   scene.remove(enemy.group);
+  // Materiais do cache global são usados em outros personagens e no cenário.
+  const sharedMaterials = new Set(Object.values(mats));
   enemy.group.traverse(obj => {
-    if (obj.geometry) obj.geometry.dispose();
-    if (obj.material && !Array.isArray(obj.material)) obj.material.dispose();
+    obj.geometry?.dispose?.();
+    const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const material of materials) {
+      if (material && !sharedMaterials.has(material)) material.dispose?.();
+    }
   });
 }
 
@@ -179,7 +193,7 @@ function showScreen(screen) {
   if (screen) screen.classList.add('active');
 }
 function updateContinueButton() {
-  const canContinue = !!savedGame && [1, 2, 3].includes(savedGame.version) && savedGame.mission === '01' && !!savedGame.checkpoint;
+  const canContinue = !!savedGame && [1, 2, 3, 4].includes(savedGame.version) && savedGame.mission === '01' && !!savedGame.checkpoint;
   $('continue-btn').disabled = !canContinue;
   $('continue-btn').classList.toggle('primary', canContinue);
   $('new-game-btn').classList.toggle('primary', !canContinue);
@@ -189,7 +203,7 @@ function updateContinueButton() {
 function saveSettings() { writeJSON(SETTINGS_KEY, settings); }
 function saveGame() {
   if (!checkpoint) return;
-  savedGame = { version: 3, mission: '01', checkpoint: { ...checkpoint }, difficulty: settings.difficulty };
+  savedGame = { version: 4, mission: '01', checkpoint: { ...checkpoint }, difficulty: settings.difficulty };
   writeJSON(SAVE_KEY, savedGame);
   updateContinueButton();
   saveIndicatorTime = 2.2;
@@ -199,7 +213,9 @@ function captureCheckpoint(phase = missionPhase) {
   checkpoint = {
     x: player.position.x, z: player.position.z, phase, health: Math.max(1, health),
     ammo, reserve: reserveAmmo, pistolAmmo, pistolReserve, currentWeapon, grenades, operatorRescued, intelFound, stamina,
-    pickups: pickups.map(p => p.used), kills, shotsFired, shotsHit, elapsedMission
+    pickups: pickups.map(p => p.used), kills, shotsFired, shotsHit, elapsedMission,
+    relaysDisabled: relayStations.map(r => r.disabled), escortAmbushCleared, defenseWave,
+    escortX: escortGroup?.position.x ?? null, escortZ: escortGroup?.position.z ?? null
   };
   saveGame();
 }
@@ -244,7 +260,7 @@ function initAudio() {
 function updateAmbientAudio(dt) {
   if (!audioContext || !ambientNodes || audioContext.state !== 'running') return;
   const active = state === 'playing';
-  const phase = missionPhase === 1 || missionPhase === 4;
+  const phase = missionPhase === 1 || missionPhase === 4 || missionPhase === 5 || missionPhase === 6;
   const targetWind = active ? (phase ? .105 : .075) : .026;
   ambientNodes.master.gain.setTargetAtTime(settings.volume / 100, audioContext.currentTime, .12);
   ambientNodes.windGain.gain.setTargetAtTime(targetWind, audioContext.currentTime, .7);
@@ -437,6 +453,7 @@ function makeTerrainTexture(kind) {
     ctx.fillRect(x, y, rand() * 7 + 1, rand() * 3 + 1);
   }
   const tex = new THREE.CanvasTexture(canvas);
+  tex.generateMipmaps = true;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(kind === 'road' ? 1.7 : 15, kind === 'road' ? 28 : 15);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -444,7 +461,7 @@ function makeTerrainTexture(kind) {
   return tex;
 }
 function createSkyDome() {
-  skyDome = addMesh(new THREE.SphereGeometry(120, 24, 14), new THREE.ShaderMaterial({
+  skyDome = addMesh(new THREE.SphereGeometry(150, 16, 10), new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     vertexShader: `varying vec3 vDir; void main(){vDir=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
     fragmentShader: `varying vec3 vDir; void main(){vec3 d=normalize(vDir);float h=clamp(d.y*.5+.5,0.,1.);vec3 col=mix(vec3(.52,.51,.46),vec3(.19,.25,.29),smoothstep(.26,.85,h));float sun=pow(max(dot(d,normalize(vec3(-.65,.28,.4))),0.),72.);col+=sun*vec3(.23,.17,.09);gl_FragColor=vec4(col,1.);}`
@@ -452,14 +469,14 @@ function createSkyDome() {
   skyDome.frustumCulled = false;
 }
 function createBattlefieldDetails() {
-  // Crateras, sinalização de campo e cercas. Sem física cara nem novas texturas externas.
+  // Crateras, sinalização de campo e cercas distribuídas pelos três setores.
   const crater = mat('crater', 0x292e29);
-  for (const [x,z,r] of [[-6.3,-6.5,1.4],[6.8,-59,1.6],[-5.6,-75,1.2],[7.1,-4,1.1]]) {
-    const pit = addMesh(new THREE.CircleGeometry(r, 20), crater, scene, x, -.105, z); pit.rotation.x = -Math.PI / 2;
-    const rim = addMesh(new THREE.TorusGeometry(r * 1.04, .15, 5, 22), mat('craterRim', 0x5a5547), scene, x, -.06, z);
+  for (const [x,z,r] of [[-6.3,-6.5,1.4],[18,-52,1.6],[-38,-93,1.2],[34,-132,1.7],[-8,-158,1.1],[7,-4,1.1]]) {
+    const pit = addMesh(new THREE.CircleGeometry(r, 16), crater, scene, x, -.105, z); pit.rotation.x = -Math.PI / 2;
+    const rim = addMesh(new THREE.TorusGeometry(r * 1.04, .13, 4, 18), mat('craterRim', 0x5a5547), scene, x, -.06, z);
     rim.rotation.x = Math.PI / 2;
   }
-  const sign = new THREE.Group(); sign.position.set(-6.8, 0, -5); sign.rotation.y = .18; scene.add(sign);
+  const sign = new THREE.Group(); sign.position.set(-12.8, 0, -9); sign.rotation.y = .18; scene.add(sign);
   addBox(sign, 0, 1.4, 0, .12, 2.8, .12, mat('pole', 0x39372d));
   addBox(sign, 0, 2.7, 0, 2.4, .67, .11, mat('signPaint', 0x414b3e));
   const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128;
@@ -471,7 +488,7 @@ function createBattlefieldDetails() {
   const front = addMesh(new THREE.PlaneGeometry(2.35, .59), new THREE.MeshBasicMaterial({ map: signTex, side: THREE.DoubleSide }), sign, 0, 2.7, -.067);
   front.rotation.y = Math.PI;
   for (const side of [-1, 1]) for (let i = 0; i < 5; i++) {
-    const z = -82 - i * 2.3, x = side * 12.7;
+    const z = -160 - i * 2.3, x = side * 43;
     addCylinder(scene, x, .65, z, .035, .04, 1.3, mat('wirePost', 0x3c403a), 5);
     if (i < 4) for (const h of [.65, 1.02]) {
       const wire = addCylinder(scene, x, h, z - 1.15, .012, .012, 2.3, mat('wire', 0x3b3d38, .55, .45), 4, Math.PI / 2);
@@ -489,25 +506,27 @@ function createScatteredDetails() {
   const dummy = new THREE.Object3D();
   for (let i = 0; i < 310; i++) {
     const side = rand() < .5 ? -1 : 1;
-    dummy.position.set(side * (5.7 + rand() * 12), .22, 27 - rand() * 124);
+    dummy.position.set(side * (6.5 + rand() * 34), .22, 42 - rand() * 220);
     const sc = .35 + rand() * 1.25;
     dummy.scale.set(sc, sc, sc); dummy.rotation.set(0, rand() * 6.28, (rand() - .5) * .4);
     dummy.updateMatrix(); grassField.setMatrixAt(i, dummy.matrix);
   }
   for (let i = 0; i < 170; i++) {
     const side = rand() < .5 ? -1 : 1;
-    dummy.position.set(side * (4.4 + rand() * 13), .05, 27 - rand() * 124);
+    dummy.position.set(side * (5.2 + rand() * 35), .05, 42 - rand() * 220);
     const sc = .4 + rand() * 1.7;
     dummy.scale.set(sc, sc * .45, sc); dummy.rotation.set(rand(), rand() * 6.28, rand());
     dummy.updateMatrix(); groundDebris.setMatrixAt(i, dummy.matrix);
   }
   grassField.instanceMatrix.needsUpdate = true; groundDebris.instanceMatrix.needsUpdate = true;
+  grassField.castShadow = false; groundDebris.castShadow = false;
+  grassField.receiveShadow = settings.quality === 'alto'; groundDebris.receiveShadow = settings.quality === 'alto';
   scene.add(grassField, groundDebris);
   applySceneryDensity();
 }
 function applySceneryDensity() {
-  if (grassField) grassField.count = settings.quality === 'baixo' ? 100 : settings.quality === 'alto' ? 310 : 210;
-  if (groundDebris) groundDebris.count = settings.quality === 'baixo' ? 60 : settings.quality === 'alto' ? 170 : 110;
+  if (grassField) grassField.count = settings.quality === 'baixo' ? 75 : settings.quality === 'alto' ? 220 : 130;
+  if (groundDebris) groundDebris.count = settings.quality === 'baixo' ? 35 : settings.quality === 'alto' ? 120 : 70;
 }
 function createJanusAnomaly(x, z, scale = 1) {
   const group = new THREE.Group(); group.position.set(x, .2, z); group.scale.setScalar(scale); scene.add(group);
@@ -523,7 +542,7 @@ function createJanusAnomaly(x, z, scale = 1) {
 }
 function createRain() {
   // Gotas 3D próximas ao jogador, sem textura externa nem transparência pesada.
-  const maxDrops = 260;
+  const maxDrops = 140;
   rainPositions = new Float32Array(maxDrops * 3);
   rainDrops = [];
   for (let i = 0; i < maxDrops; i++) {
@@ -540,14 +559,15 @@ function createRain() {
 }
 function applyRainQuality() {
   if (!rainField) return;
-  const n = settings.quality === 'baixo' ? 65 : settings.quality === 'alto' ? 260 : 150;
+  const n = settings.quality === 'baixo' ? 32 : settings.quality === 'alto' ? 140 : 70;
   rainField.geometry.setDrawRange(0, n);
 }
 function updateRain(dt) {
   if (!rainField || state !== 'playing') { if (rainField) rainField.visible = false; return; }
   rainField.visible = true;
   rainField.position.set(player.position.x, 0, player.position.z);
-  for (let i = 0; i < rainDrops.length; i++) {
+  const activeDrops = rainField.geometry.drawRange?.count ?? rainDrops.length;
+  for (let i = 0; i < activeDrops; i++) {
     const d = rainDrops[i]; d.y -= d.speed * dt;
     d.x += dt * .85;
     if (d.y < .12) { d.y += 12.8; d.x = (rand() - .5) * 28; d.z = (rand() - .5) * 30; }
@@ -570,34 +590,34 @@ function addPropInstances(material, placements) {
   });
   mesh.instanceMatrix.needsUpdate = true;
   mesh.castShadow = false;
-  mesh.receiveShadow = true;
+  mesh.receiveShadow = settings.quality === 'alto';
   scene.add(mesh);
   return mesh;
 }
 function createBattlefieldProps() {
   // Props instanciados: sete lotes para manter baixo o número de draw calls.
   const whiteMarkers = [], redStripes = [], posts = [], beams = [], wires = [], stakes = [], scraps = [], woodScraps = [];
-  for (let i = 0; i < 14; i++) {
-    const z = 14 - i * 8.2;
+  for (let i = 0; i < 24; i++) {
+    const z = 36 - i * 9.1;
     const x = (i % 2 ? -1 : 1) * (5.5 + rand() * 1.1);
     whiteMarkers.push([x, .44, z, .3, .88, .28]);
     redStripes.push([x, .68, z - .148, .31, .12, .03]);
   }
-  for (const [x, z, rot] of [[-10,-11,.3],[11,-42,-.4],[-9,-73,.15],[10,-88,-.15]]) {
+  for (const [x, z, rot] of [[-16,-18,.3],[16,-48,-.4],[-35,-83,.15],[36,-121,-.15],[-12,-157,.2]]) {
     for (let j = 0; j < 3; j++) posts.push([x + (j - 1) * .72 * Math.cos(rot), .62 + (j % 2) * .09,
       z - (j - 1) * .72 * Math.sin(rot), .15, 1.2, .16, 0, rot, (j - 1) * .12]);
     for (const h of [.36, .88]) beams.push([x, h, z, 2.5, .12, .13, 0, rot]);
   }
-  for (const [x, z, length] of [[-12,-30,6],[12,-64,7],[-12,-87,5]]) {
+  for (const [x, z, length] of [[-40,-48,7],[40,-76,8],[-41,-126,7],[42,-158,5]]) {
     for (let i = 0; i <= length; i++) {
       const zz = z - i * .75;
       if (i % 2 === 0) stakes.push([x, .5, zz, .055, 1, .055]);
       if (i < length) for (const y of [.38,.7]) wires.push([x, y, zz - .375, .018, .018, .75]);
     }
   }
-  for (let i = 0; i < 32; i++) {
-    const x = (i < 16 ? -2.8 : 4.1) + (rand() - .5) * 8;
-    const z = (i < 16 ? -21 : -32) + (rand() - .5) * 9;
+  for (let i = 0; i < 48; i++) {
+    const x = (i < 24 ? -3.5 : 5.5) + (rand() - .5) * 14;
+    const z = (i < 24 ? -22 : -39) + (rand() - .5) * 12;
     (i % 3 ? scraps : woodScraps).push([x, -.025, z, .12 + rand() * .5, .05, .1 + rand() * .7, 0, rand() * 6.28]);
   }
   addPropInstances(mat('roadMarker', 0x858577), whiteMarkers);
@@ -606,17 +626,19 @@ function createBattlefieldProps() {
   addPropInstances(mat('rustedIron', 0x413f35, .88, .2), [...wires, ...stakes, ...scraps]);
 }
 function createRoadRuts() {
-  const rutMat = new THREE.MeshStandardMaterial({ color: 0x2d302b, roughness: 1, transparent: true, opacity: .5, depthWrite: false });
-  for (const x of [-1.65, 1.65]) for (let i = 0; i < 20; i++) {
-    const z = 24 - i * 6.2;
-    const strip = addMesh(new THREE.PlaneGeometry(.27 + rand() * .17, 3.5 + rand() * 2), rutMat, scene, x + (rand() - .5) * .24, -.095, z);
-    strip.rotation.x = -Math.PI / 2;
+  const rutMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0x2d302b, roughness: 1, transparent: true, opacity: .42, depthWrite: false }), 56);
+  const dummy = new THREE.Object3D(); let index = 0;
+  for (const x of [-1.65, 1.65]) for (let i = 0; i < 28; i++) {
+    const z = 38 - i * 8.3;
+    dummy.position.set(x + (rand() - .5) * .24, -.095, z);
+    dummy.rotation.set(-Math.PI / 2, 0, (rand() - .5) * .05);
+    dummy.scale.set(.27 + rand() * .17, 3.5 + rand() * 2, 1); dummy.updateMatrix(); rutMesh.setMatrixAt(index++, dummy.matrix);
   }
-  const puddleMat = new THREE.MeshStandardMaterial({ color: 0x59645e, metalness: .2, roughness: .19, transparent: true, opacity: .53, depthWrite: false });
-  for (const [x, z, w, h] of [[2.8,-11,1.5,2.7],[-2.4,-42,1.2,2.4],[.5,-67,1.4,1.8],[-1.9,-80,1.8,2.3]]) {
-    const puddle = addMesh(new THREE.CircleGeometry(1, 18), puddleMat, scene, x, -.085, z);
-    puddle.rotation.x = -Math.PI / 2; puddle.scale.set(w, h, 1);
-  }
+  rutMesh.instanceMatrix.needsUpdate = true; scene.add(rutMesh);
+  const puddleMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 14), new THREE.MeshStandardMaterial({ color: 0x59645e, metalness: .12, roughness: .32, transparent: true, opacity: .42, depthWrite: false }), 5);
+  const puddles = [[2.8,-11,1.5,2.7],[-2.4,-42,1.2,2.4],[-22,-69,1.8,2.3],[24,-92,1.6,2.1],[-3,-143,1.8,2.3]];
+  puddles.forEach(([x,z,w,h], i) => { dummy.position.set(x, -.085, z); dummy.rotation.set(-Math.PI/2, 0, 0); dummy.scale.set(w,h,1); dummy.updateMatrix(); puddleMesh.setMatrixAt(i, dummy.matrix); });
+  puddleMesh.instanceMatrix.needsUpdate = true; scene.add(puddleMesh);
 }
 
 function addGroundPatch(x, z, sx, sz, color, opacity = 1) {
@@ -707,8 +729,51 @@ function makeRuinedHouse(x, z) {
   addCollider(x, z + 2, 4.6);
   registerCover(g);
 }
+function createCombatLanes() {
+  // Duas rotas laterais ligam os pontos de combate e permitem flanquear posições.
+  const laneMat = new THREE.MeshStandardMaterial({ color: 0x47463a, roughness: 1 });
+  for (const x of [-27, 27]) {
+    const lane = addMesh(new THREE.PlaneGeometry(5.5, 104), laneMat, scene, x, -.105, -91);
+    lane.rotation.x = -Math.PI / 2;
+  }
+  for (const z of [-62, -116]) {
+    const link = addMesh(new THREE.PlaneGeometry(58, 4.5), laneMat, scene, 0, -.108, z);
+    link.rotation.x = -Math.PI / 2;
+  }
+  // Coberturas que criam escolhas de avanço, não apenas um corredor frontal.
+  makeSandbagLine(-20, -59, 7, .35); makeSandbagLine(20, -98, 7, -.35);
+  makeSandbagLine(-34, -92, 5, .1); makeSandbagLine(35, -119, 5, -.1);
+  worldObstacles.push(addBox(scene, -20, .62, -83, 1.5, 1.25, 1.4, mat('flankCrate', 0x514936), .25)); addCollider(-20, -83, 1.05);
+  worldObstacles.push(addBox(scene, 20, .62, -111, 1.5, 1.25, 1.4, mat('flankCrateB', 0x514936), -.25)); addCollider(20, -111, 1.05);
+}
+function createRelayStation(x, z, code) {
+  const group = new THREE.Group(); group.position.set(x, 0, z); scene.add(group);
+  const metal = surfaceMat(`relay-metal-${code}`, 0x343a35, 'metal', .58, .62, .02);
+  const casing = surfaceMat(`relay-casing-${code}`, 0x4a5145, 'painted', .84, .18, .025);
+  addBox(group, 0, .75, 0, 1.35, 1.45, .85, casing);
+  addBox(group, 0, 1.53, 0, 1.48, .12, .94, metal);
+  addCylinder(group, 0, 2.65, 0, .055, .07, 2.2, metal, 7);
+  for (const side of [-1, 1]) addCylinder(group, side * .48, 1.95, 0, .025, .025, .8, metal, 5);
+  const core = addMesh(new THREE.OctahedronGeometry(.22, 0), new THREE.MeshStandardMaterial({ color: 0xa86be0, emissive: 0x6c2ca0, emissiveIntensity: 2.2 }), group, 0, 1.12, -.48);
+  const ring = addMesh(new THREE.TorusGeometry(.72, .035, 5, 20), new THREE.MeshBasicMaterial({ color: 0xc28bf0, transparent: true, opacity: .8 }), group, 0, .12, 0);
+  ring.rotation.x = Math.PI / 2;
+  const light = new THREE.PointLight(0x9c59d5, settings.quality === 'baixo' ? .45 : 1.0, 8);
+  light.position.set(0, 1.7, -.55); group.add(light);
+  relayStations.push({ code, x, z, group, core, ring, light, disabled: false, guardsSpawned: false });
+}
+function createOutpostConsole() {
+  outpostConsole = new THREE.Group(); outpostConsole.position.set(-4.2, 0, -168.5); outpostConsole.visible = false; scene.add(outpostConsole);
+  const body = surfaceMat('outpost-console-body', 0x3c453c, 'painted', .75, .22, .02);
+  const screen = new THREE.MeshStandardMaterial({ color: 0x9e7bc0, emissive: 0x4c286e, emissiveIntensity: .8, roughness: .35 });
+  addBox(outpostConsole, 0, .95, 0, 1.25, 1.9, .75, body);
+  addBox(outpostConsole, 0, 1.62, -.4, .92, .55, .08, screen, -.18);
+  addBox(outpostConsole, 0, 1.15, -.42, .8, .08, .08, mat('consoleDial', 0xb89a61, .45, .4));
+  addCylinder(outpostConsole, -.42, .3, 0, .055, .055, .6, body, 6);
+  addCylinder(outpostConsole, .42, .3, 0, .055, .055, .6, body, 6);
+  const marker = addMesh(new THREE.TorusGeometry(.55, .035, 5, 18), new THREE.MeshBasicMaterial({ color: 0xd1ad6e }), outpostConsole, 0, .08, 0); marker.rotation.x = Math.PI / 2;
+}
 function makeOutpost() {
-  const g = new THREE.Group(); g.position.set(0, 0, -96); scene.add(g);
+  const g = new THREE.Group(); g.position.set(0, 0, -174); scene.add(g);
   const concrete = mat('outpostConcrete', 0x555950); const olive = mat('outpostOlive', 0x42483c);
   addBox(g, -7, 2.2, 0, 1.3, 4.4, 1.2, concrete);
   addBox(g, 7, 2.2, 0, 1.3, 4.4, 1.2, concrete);
@@ -721,7 +786,7 @@ function makeOutpost() {
   gate.userData.isGate = true; g.userData.gate = gate; outpostGate = gate;
   addBox(g, 0, 2.3, -8, 11, 4.6, 1, concrete);
   addBox(g, 0, 4.7, -8, 11.5, .4, 1.4, olive);
-  addCollider(-7, -96, 1.2); addCollider(7, -96, 1.2);
+  addCollider(-7, -174, 1.2); addCollider(7, -174, 1.2);
   registerCover(g);
 }
 let outpostGate = null;
@@ -735,9 +800,9 @@ function createSmoke(x, y, z) {
   effects.push({ type: 'smoke', object: sprite, life: 9999, baseY: y, phase: Math.random() * 6 });
 }
 function createDust() {
-  const count = settings.quality === 'baixo' ? 65 : 115;
+  const count = settings.quality === 'baixo' ? 30 : settings.quality === 'alto' ? 80 : 50;
   const geo = new THREE.BufferGeometry(); const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) { positions[i * 3] = (Math.random() - .5) * 50; positions[i * 3 + 1] = Math.random() * 8 + .2; positions[i * 3 + 2] = -Math.random() * 115 + 30; }
+  for (let i = 0; i < count; i++) { positions[i * 3] = (Math.random() - .5) * 100; positions[i * 3 + 1] = Math.random() * 8 + .2; positions[i * 3 + 2] = 48 - Math.random() * 228; }
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   const points = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xc6b99b, size: .055, transparent: true, opacity: .34, sizeAttenuation: true }));
   scene.add(points); dustField = points;
@@ -747,16 +812,69 @@ function createCinematicLighting() {
   const coolFill = new THREE.DirectionalLight(0x9fb8cf, .38); coolFill.position.set(24, 18, -42); scene.add(coolFill);
   const rimFill = new THREE.DirectionalLight(0x6e7782, .22); rimFill.position.set(-18, 12, 38); scene.add(rimFill);
   // Feixes atmosféricos baratos: cones translúcidos, sem pós-processamento volumétrico.
-  const beamMaterial = new THREE.MeshBasicMaterial({ color: 0xd7c49d, transparent: true, opacity: .045, depthWrite: false, side: THREE.DoubleSide });
-  for (const [x, z, rot] of [[-10, -30, -.14], [11, -62, .18], [-7, -82, -.1]]) {
+  const beamMaterial = new THREE.MeshBasicMaterial({ color: 0xd7c49d, transparent: true, opacity: .035, depthWrite: false, side: THREE.DoubleSide });
+  const beamSets = settings.quality === 'alto' ? [[-10,-30,-.14],[11,-62,.18],[-7,-82,-.1]] : settings.quality === 'equilibrado' ? [[-10,-30,-.14]] : [];
+  for (const [x, z, rot] of beamSets) {
     const beam = addMesh(new THREE.ConeGeometry(3.4, 18, 12, 1, true), beamMaterial, scene, x, 9, z);
     beam.rotation.z = Math.PI + rot; beam.rotation.x = .08; beam.userData.atmosphericBeam = true;
   }
   atmosphericLights = [];
-  for (const [x, z, intensity] of [[-2, -22, 2.6], [4, -32, 2.1]]) {
+  for (const [x, z, intensity] of (settings.quality === 'baixo' ? [[-2,-22,1.2]] : [[-2,-22,1.8],[4,-32,1.4]])) {
     const light = new THREE.PointLight(0xff7b3b, intensity, 11, 2); light.position.set(x + .8, 1.45, z - 1.2); scene.add(light);
     light.userData.baseIntensity = intensity; light.userData.phase = rand() * 6.28; atmosphericLights.push(light);
   }
+}
+function createRoadsidePatchInstances() {
+  const mesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 10), mat('roadside-patches', 0x45483a), 28);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < 28; i++) {
+    const z = 22 - i * 4.2;
+    dummy.position.set((rand() - .5) * 5, -.105, z);
+    dummy.rotation.set(-Math.PI / 2, 0, rand() * 6.28);
+    const sx = .2 + rand() * .8, sz = .12 + rand() * .3;
+    dummy.scale.set(sx, sz, 1); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true; mesh.frustumCulled = true; scene.add(mesh);
+}
+function createHillField(count) {
+  const geometry = new THREE.ConeGeometry(1, 1, 7);
+  const mesh = new THREE.InstancedMesh(geometry, mat('hill-field', 0x54594e), count);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < count; i++) {
+    const side = i % 2 ? -1 : 1;
+    dummy.position.set(side * (54 + rand() * 18), 5, 30 - rand() * 220);
+    const radius = 12 + rand() * 13, height = 20 + rand() * 22;
+    dummy.scale.set(radius, height, radius); dummy.rotation.set(0, rand() * 6.28, (rand() - .5) * .2);
+    dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true; mesh.frustumCulled = true; scene.add(mesh);
+}
+function createTreeField(placements) {
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.22, .32, 2.5, 6), mat('tree-trunks', 0x37352b), placements.length);
+  const crowns = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 2.2, 7), mat('tree-crowns', 0x3e493b), placements.length * 3);
+  const dummy = new THREE.Object3D(); let crownIndex = 0;
+  placements.forEach(([x, z, scale], treeIndex) => {
+    dummy.position.set(x, 1.25 * scale, z); dummy.scale.setScalar(scale); dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix(); trunks.setMatrixAt(treeIndex, dummy.matrix);
+    addCollider(x, z, .72 * scale);
+    for (let i = 0; i < 3; i++) {
+      const crownScale = scale * (1.5 - i * .23);
+      dummy.position.set(x, (3.1 + i * .95) * scale, z); dummy.scale.set(crownScale, scale, crownScale); dummy.rotation.set(0, i * .7, 0);
+      dummy.updateMatrix(); crowns.setMatrixAt(crownIndex++, dummy.matrix);
+    }
+  });
+  trunks.instanceMatrix.needsUpdate = true; crowns.instanceMatrix.needsUpdate = true;
+  trunks.frustumCulled = true; crowns.frustumCulled = true; scene.add(trunks, crowns);
+}
+function createRockField(count) {
+  const mesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), mat('rock-field', 0x55564d), count);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < count; i++) {
+    const scale = .35 + rand() * .8, x = (rand() < .5 ? -1 : 1) * (13 + rand() * 30), z = 38 - rand() * 218;
+    dummy.position.set(x, .45 * scale, z); dummy.scale.set(1.3 * scale, .65 * scale, .9 * scale); dummy.rotation.set(rand(), rand(), rand());
+    dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix); addCollider(x, z, 1.05 * scale);
+  }
+  mesh.instanceMatrix.needsUpdate = true; mesh.frustumCulled = true; scene.add(mesh);
 }
 function buildWorld() {
   if (worldBuilt) return;
@@ -765,79 +883,77 @@ function buildWorld() {
   scene.add(new THREE.HemisphereLight(0xc1c4b5, 0x36372e, 1.05));
   const sun = new THREE.DirectionalLight(0xffd7a0, 1.75); sunLight = sun; sun.position.set(-28, 42, 22); sun.castShadow = settings.quality === 'alto';
   sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.left = -45; sun.shadow.camera.right = 45; sun.shadow.camera.top = 45; sun.shadow.camera.bottom = -45; scene.add(sun); scene.add(sun.target);
-  const warm = new THREE.PointLight(0xb87543, 13, 25, 2); warm.position.set(-5, 4, -24); scene.add(warm);
+  const warm = new THREE.PointLight(0xb87543, settings.quality === 'baixo' ? 4 : 7, 22, 2); warm.position.set(-5, 4, -24); scene.add(warm);
   createCinematicLighting();
-  addMesh(new THREE.PlaneGeometry(190, 190), new THREE.MeshStandardMaterial({ map: makeTerrainTexture('ground'), roughness: 1 }), scene, 0, -.22, -32).rotation.x = -Math.PI / 2;
-  addMesh(new THREE.PlaneGeometry(9, 145), new THREE.MeshStandardMaterial({ map: makeTerrainTexture('road'), roughness: 1 }), scene, 0, -.12, -35).rotation.x = -Math.PI / 2;
-  // Ombros de terra e sulcos na estrada.
-  addMesh(new THREE.PlaneGeometry(5, 145), mat('shoulder', 0x514d3e), scene, -6.7, -.13, -35).rotation.x = -Math.PI / 2;
-  addMesh(new THREE.PlaneGeometry(5, 145), mat('shoulder', 0x514d3e), scene, 6.7, -.13, -35).rotation.x = -Math.PI / 2;
-  for (let i = 0; i < 28; i++) {
-    const z = 22 - i * 4.2;
-    addGroundPatch((rand() - .5) * 5, z, .2 + rand() * .8, .12 + rand() * .3, i % 3 ? 0x363a32 : 0x5c5747, .75);
-  }
-  // Colinas de fundo e silhueta do vale.
-  for (let i = 0; i < 13; i++) {
-    const side = i % 2 ? -1 : 1; const x = side * (23 + rand() * 22); const z = -8 - rand() * 105;
-    const hill = addMesh(new THREE.ConeGeometry(9 + rand() * 9, 18 + rand() * 18, 7), mat('hill', i % 2 ? 0x505548 : 0x5b5c4f), scene, x, 4, z);
-    hill.rotation.z = (rand() - .5) * .2;
-  }
+  addMesh(new THREE.PlaneGeometry(130, 280), new THREE.MeshStandardMaterial({ map: makeTerrainTexture('ground'), roughness: 1 }), scene, 0, -.22, -70).rotation.x = -Math.PI / 2;
+  addMesh(new THREE.PlaneGeometry(13, 232), new THREE.MeshStandardMaterial({ map: makeTerrainTexture('road'), roughness: 1 }), scene, 0, -.12, -70).rotation.x = -Math.PI / 2;
+  // Ombros largos: permitem flanquear posições e escolher cobertura.
+  addMesh(new THREE.PlaneGeometry(9, 232), mat('shoulder', 0x514d3e), scene, -11, -.13, -70).rotation.x = -Math.PI / 2;
+  addMesh(new THREE.PlaneGeometry(9, 232), mat('shoulder', 0x514d3e), scene, 11, -.13, -70).rotation.x = -Math.PI / 2;
+  createRoadsidePatchInstances();
+  // Vale maior com silhueta distante em lotes instanciados: reduz dezenas de draw calls.
+  createHillField(16);
   const treePositions = [
-    [-10, 15, 1.2], [11, 13, 1.25], [-13, 1, 1.5], [14, -4, 1.2], [-12, -13, 1.1], [12, -18, 1.3],
-    [-16, -29, 1.5], [16, -30, 1.25], [-11, -43, 1.3], [13, -48, 1.4], [-18, -58, 1.2], [17, -63, 1.4],
-    [-11, -73, 1.1], [12, -77, 1.2], [-16, -88, 1.35], [16, -88, 1.35], [-23, -15, 1.3], [24, -42, 1.3],
-    [-24, -68, 1.4], [23, -91, 1.3]
+    [-16, 20, 1.2], [17, 14, 1.25], [-38, 2, 1.4], [39, -8, 1.25], [-15, -18, 1.1], [16, -26, 1.3],
+    [-40, -35, 1.4], [41, -45, 1.25], [-16, -57, 1.3], [17, -63, 1.35], [-41, -76, 1.2], [40, -83, 1.3],
+    [-17, -96, 1.1], [18, -104, 1.2], [-40, -119, 1.35], [41, -126, 1.3], [-16, -139, 1.2], [17, -145, 1.3],
+    [-39, -160, 1.35], [40, -169, 1.3]
   ];
-  treePositions.forEach(([x, z, s]) => addTree(x, z, s));
-  for (let i = 0; i < 18; i++) addRock((rand() < .5 ? -1 : 1) * (7 + rand() * 11), 18 - rand() * 110, .35 + rand() * .8);
-  makeTelegraphPole(-9, 8); makeTelegraphPole(9, -48); makeTelegraphPole(-10, -80);
+  createTreeField(treePositions);
+  createRockField(24);
+  makeTelegraphPole(-18, 12); makeTelegraphPole(19, -58); makeTelegraphPole(-37, -113); makeTelegraphPole(34, -151);
   // Comboio destruído: dois caminhões, destroços e cobertura.
-  makeTruck(-2.8, -21, -.22, true);
-  makeTruck(4.1, -32, .28, true);
-  makeSandbagLine(-7.4, -17, 5, .1); makeSandbagLine(8, -38, 4, -.2);
-  worldObstacles.push(addBox(scene, -7.4, .55, -28, 1.1, 1.1, 1.1, mat('crate', 0x5a4c38), .2)); addCollider(-7.4, -28, .9);
-  worldObstacles.push(addBox(scene, 7.5, .55, -24, 1.2, 1.1, 1.1, mat('crate', 0x554a39), -.3)); addCollider(7.5, -24, .9);
-  worldObstacles.push(addBox(scene, 8.1, .45, -43, 1.4, .9, 1.2, mat('crate', 0x4e4839), .4)); addCollider(8.1, -43, 1);
-  makeRuinedHouse(-15, -55);
-  // Abrigo de campanha junto ao operador.
-  addBox(scene, 7.2, 1.45, -49, 4.8, .18, 4.5, mat('canvas', 0x494d40));
-  addCylinder(scene, 5.1, 1.35, -49, .07, .07, 3.2, mat('pole', 0x4a463a), 6);
-  addCylinder(scene, 9.3, 1.35, -49, .07, .07, 3.2, mat('pole', 0x4a463a), 6);
-  makeOutpost();
+  makeTruck(-3.5, -22, -.22, true);
+  makeTruck(5.5, -39, .28, true);
+  makeSandbagLine(-12.5, -18, 7, .1); makeSandbagLine(13.5, -46, 6, -.2);
+  worldObstacles.push(addBox(scene, -15.5, .55, -30, 1.1, 1.1, 1.1, mat('crate', 0x5a4c38), .2)); addCollider(-15.5, -30, .9);
+  worldObstacles.push(addBox(scene, 15.2, .55, -27, 1.2, 1.1, 1.1, mat('crate', 0x554a39), -.3)); addCollider(15.2, -27, .9);
+  worldObstacles.push(addBox(scene, 13.5, .45, -49, 1.4, .9, 1.2, mat('crate', 0x4e4839), .4)); addCollider(13.5, -49, 1);
+  makeRuinedHouse(-27, -111);
+  makeRuinedHouse(31, -126);
+  // Duas rotas de flanqueamento e bolsões de cobertura em torno dos repetidores.
+  createCombatLanes();
+  relayStations = []; createRelayStation(-29, -72, 'A'); createRelayStation(30, -87, 'B');
+  // Abrigo de campanha na rota lateral da fazenda.
+  addBox(scene, -11.5, 1.45, -101, 4.8, .18, 4.5, mat('canvas', 0x494d40));
+  addCylinder(scene, -13.6, 1.35, -101, .07, .07, 3.2, mat('pole', 0x4a463a), 6);
+  addCylinder(scene, -9.4, 1.35, -101, .07, .07, 3.2, mat('pole', 0x4a463a), 6);
+  makeOutpost(); createOutpostConsole();
   createRoadRuts(); createScatteredDetails(); createBattlefieldDetails(); createBattlefieldProps(); createRain();
-  createJanusAnomaly(-5.2, -35, .8); createJanusAnomaly(-12.2, -59, 1.05);
-  // Suprimentos posicionados antes da emboscada.
-  createPickup('medkit', -7.8, -13.5, 'KIT MÉDICO');
-  createPickup('ammo', 8.3, -28.8, 'MUNIÇÃO');
-  createPickup('intel', -9.3, -61, 'DOCUMENTO JANUS');
-  createPickup('ammo', -6.7, -70.5, 'MUNIÇÃO');
-  createPickup('medkit', 7.5, -77, 'KIT MÉDICO');
-  createPickup('grenade', 5.7, -68, 'GRANADAS');
+  createJanusAnomaly(-5.2, -35, .8); createJanusAnomaly(-29, -72, 1.05); createJanusAnomaly(30, -87, 1.0);
+  // Suprimentos e documento opcional nas rotas laterais.
+  createPickup('medkit', -12.8, -14, 'KIT MÉDICO');
+  createPickup('ammo', 16.8, -29, 'MUNIÇÃO');
+  createPickup('intel', -35.5, -117, 'DOCUMENTO JANUS');
+  createPickup('ammo', -36, -79, 'MUNIÇÃO');
+  createPickup('medkit', 17, -143, 'KIT MÉDICO');
+  createPickup('grenade', 34, -108, 'GRANADAS');
+  createPickup('ammo', 34, -145, 'MUNIÇÃO');
   createRadioOperator();
   createEscortOperator();
   decorateFinalApproach();
-  createSmoke(-2, 3.2, -22); createSmoke(4, 3.8, -32); createDust();
+  createSmoke(-3, 3.2, -22); createSmoke(5, 3.8, -39); createSmoke(-25, 2.8, -109); createDust();
 }
 
 function decorateFinalApproach() {
-  // Trilho de abastecimento, guaritas, iluminação e antenas de campo.
-  for (const z of [-64, -71, -78, -86]) {
+  // Trilho de abastecimento, guaritas, iluminação e antenas do posto avançado.
+  for (const z of [-143, -150, -157, -164, -171]) {
     addGroundPatch(-3.4, z, .75, 1.3, 0x31392f, .85);
     addGroundPatch(2.7, z + 1.3, .6, 1.1, 0x38392f, .85);
   }
-  for (const x of [-5.8, 5.8]) {
-    const g = new THREE.Group(); g.position.set(x, 0, -91); scene.add(g);
+  for (const x of [-8.5, 8.5]) {
+    const g = new THREE.Group(); g.position.set(x, 0, -168); scene.add(g);
     addCylinder(g, 0, 2.1, 0, .1, .15, 4.2, mat('pole', 0x39372d), 7);
     addMesh(new THREE.ConeGeometry(.45, .45, 7), mat('gateMetal', 0x252a26), g, 0, 4.1, 0);
     const lamp = addMesh(new THREE.SphereGeometry(.2, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffb96b }), g, 0, 3.8, 0);
     lamp.userData.glow = true;
   }
-  makeSandbagLine(-8.3, -86, 4, .25);
-  makeSandbagLine(8.3, -87, 4, -.2);
-  const mast = new THREE.Group(); mast.position.set(-12.5, 0, -91); scene.add(mast);
+  makeSandbagLine(-10.5, -164, 6, .25);
+  makeSandbagLine(10.5, -165, 6, -.2);
+  const mast = new THREE.Group(); mast.position.set(-16.5, 0, -169); scene.add(mast);
   addCylinder(mast, 0, 5.3, 0, .08, .15, 10.6, mat('gateMetal', 0x252a26), 6);
   addCylinder(mast, 0, 8.4, 0, 1.15, 1.15, .07, mat('radioDial', 0x9c8b63), 10, 0, Math.PI / 2);
-  createSmoke(-11, 1.4, -88);
+  createSmoke(-15, 1.4, -166);
 }
 function createEscortOperator() {
   escortGroup = new THREE.Group(); escortGroup.visible = false; scene.add(escortGroup);
@@ -873,7 +989,7 @@ function createPickup(type, x, z, label) {
 
 let operatorGroup = null;
 function createRadioOperator() {
-  operatorGroup = new THREE.Group(); operatorGroup.position.set(4.7, 0, -45.5); scene.add(operatorGroup);
+  operatorGroup = new THREE.Group(); operatorGroup.position.set(-20.5, 0, -110.5); scene.add(operatorGroup);
   const uniform = mat('operatorUniform', 0x4b5145); const skin = mat('operatorSkin', 0x9a8269); const dark = mat('operatorDark', 0x292c27);
   const torso = addMesh(new THREE.BoxGeometry(.65, .42, 1.05), uniform, operatorGroup, 0, .43, 0); torso.rotation.x = .05;
   addMesh(new THREE.SphereGeometry(.22, 8, 7), skin, operatorGroup, 0, .68, -.58);
@@ -891,7 +1007,7 @@ function createRadioOperator() {
   const ring = addMesh(new THREE.TorusGeometry(.38, .035, 5, 18), new THREE.MeshBasicMaterial({ color: 0xd1ad6e }), marker); ring.rotation.x = Math.PI / 2;
   const stem = addMesh(new THREE.ConeGeometry(.13, .26, 5), new THREE.MeshBasicMaterial({ color: 0xd1ad6e }), marker, 0, -.3, 0); stem.rotation.x = Math.PI;
   operatorGroup.userData.marker = marker;
-  operatorCollider = addCollider(4.7, -45.5, .65);
+  operatorCollider = addCollider(-20.5, -110.5, .65);
 }
 
 function activeWeapon() { return WEAPONS[currentWeapon]; }
@@ -999,12 +1115,12 @@ function findClearSpawn(x, z) {
       if (!enemyBlocked(nx, nz, .45)) return { x: nx, z: nz };
     }
   }
-  return { x: 0, z: -67 };
+  return { x: 0, z: -120 };
 }
 // ---------- Navegação tática: grade estática + A* leve. ----------
 // A grade é construída uma vez após o cenário. A IA recalcula rotas em baixa frequência,
 // evitando perseguir o jogador através de caminhões, ruínas e barricadas.
-const NAV_CONFIG = Object.freeze({ minX: -17.5, minZ: -103, cell: 1.25, maxX: 17.5, maxZ: 31 });
+const NAV_CONFIG = Object.freeze({ minX: -48, minZ: -190, cell: 1.5, maxX: 48, maxZ: 50 });
 function buildNavigationGrid() {
   const cols = Math.round((NAV_CONFIG.maxX - NAV_CONFIG.minX) / NAV_CONFIG.cell) + 1;
   const rows = Math.round((NAV_CONFIG.maxZ - NAV_CONFIG.minZ) / NAV_CONFIG.cell) + 1;
@@ -1013,7 +1129,7 @@ function buildNavigationGrid() {
     const z = NAV_CONFIG.minZ + iz * NAV_CONFIG.cell;
     for (let ix = 0; ix < cols; ix++) {
       const x = NAV_CONFIG.minX + ix * NAV_CONFIG.cell;
-      let isBlocked = x < -17.1 || x > 17.1 || z < -102.4 || z > 30.4;
+      let isBlocked = x < -47.5 || x > 47.5 || z < -189.5 || z > 49.5;
       if (!isBlocked) {
         for (const c of colliders) {
           if (!c.disabled && Math.hypot(x - c.x, z - c.z) < c.r + .43) { isBlocked = true; break; }
@@ -1317,59 +1433,132 @@ function setEnemyLOD(enemy, distance) {
   }
 }
 function onEnemyKilled(enemy) {
+  if (!enemy.alive) return;
   enemy.alive = false; enemy.state = 'dead'; kills++;
   enemy.sprite.visible = false; enemy.renderMeshes.forEach(m => m.visible = true);
   enemy.deadTime = 0; enemy.deathStartX = enemy.group.rotation.x; enemy.deathStartY = enemy.group.position.y;
   enemy.group.traverse(obj => { if (obj.isMesh && obj !== enemy.sprite) {
     obj.material = obj.material.clone(); obj.material.color?.multiplyScalar(.55);
   }});
-  if (missionPhase === 1 && enemies.filter(e => e.alive).length === 0) {
-    missionPhase = 2; updateObjective('RESGATE O OPERADOR DE RÁDIO');
-    showToast('ÁREA SEGURA', 'As ameaças foram neutralizadas. Procure o operador no abrigo.', 5);
-    showRadio('Moretti: “Boa, Raul. O operador está junto ao abrigo improvisado. Vá buscá-lo.”', 5);
+  const living = enemies.filter(e => e.alive);
+  if (missionPhase === 1 && living.length === 0) {
+    missionPhase = 2; relayStations.forEach(r => { r.guardsSpawned = false; });
+    updateObjective('DESATIVE OS REPETIDORES JANUS · 0 / 2');
+    showToast('COMBOIO SEGURO', 'A emboscada foi contida. Dois repetidores estão mantendo o sinal ativo. Desative ambos.', 6);
+    showRadio('Moretti: “O sinal vem de dois pontos na encosta. Desligue os repetidores para localizar o operador.”', 5.5);
     playBeep(620, .16); captureCheckpoint(2);
-  } else if (missionPhase === 4 && finalWaveSpawned && enemies.every(e => !e.alive)) {
-    missionPhase = 5; gateOpening = true;
-    updateObjective('ATRAVESSE O PORTÃO DO POSTO AVANÇADO');
-    showRadio('Moretti: “A ameaça recuou! Abrindo o portão. Entre, Raul!”', 5);
-    showToast('ACESSO LIBERADO', 'O portão está abrindo. Alcance a área de extração.', 5);
-    captureCheckpoint(5); playBeep(750, .2);
-  } else if (missionPhase === 1) updateObjective(`ELIMINE AS AMEAÇAS · ${enemies.filter(e => !e.alive).length} / 3`);
-  else if (missionPhase === 4) updateObjective(`DEFENDA O POSTO · ${enemies.filter(e => e.alive).length} AMEAÇAS`);
+  } else if (missionPhase === 4 && escortAmbushTriggered && !escortAmbushCleared && living.length === 0) {
+    escortAmbushCleared = true;
+    updateObjective('ESCOLTE O OPERADOR ATÉ O POSTO');
+    showToast('ROTA LIBERADA', 'A emboscada na estrada foi neutralizada. Continue até o posto avançado.', 5);
+    showRadio('Operador: “A estrada está livre. O posto fica logo depois da curva!”', 4.5);
+    captureCheckpoint(4); playBeep(690, .18);
+  } else if (missionPhase === 5 && defenseWave === 1 && living.length === 0) {
+    missionPhase = 6; finalSpawnTimer = 2.8; finalWaveSpawned = false;
+    updateObjective('POSTO SOB ATAQUE · ONDA 2 / 2');
+    showToast('PRIMEIRA ONDA CONTIDA', 'Recarregue e reposicione-se. Mais inimigos estão chegando pela encosta.', 5);
+    captureCheckpoint(6); playBeep(520, .18);
+  } else if (missionPhase === 6 && defenseWave === 2 && living.length === 0) {
+    missionPhase = 7; if (outpostConsole) outpostConsole.visible = true;
+    updateObjective('ATIVE O RÁDIO DE EMERGÊNCIA');
+    showRadio('Moretti: “Setor limpo! Ative o transmissor do posto para enviar o alerta e abrir o portão.”', 5.5);
+    showToast('POSTO PROTEGIDO', 'Acesse o console de rádio dentro da barricada.', 5);
+    captureCheckpoint(7); playBeep(760, .2);
+  } else if (missionPhase === 1) updateObjective(`ELIMINE A EMBOSCADA · ${4 - living.length} / 4`);
+  else if (missionPhase === 5) updateObjective(`DEFENDA O POSTO · ONDA 1 · ${living.length} AMEAÇAS`);
+  else if (missionPhase === 6) updateObjective(`DEFENDA O POSTO · ONDA 2 · ${living.length} AMEAÇAS`);
+}
+function startEscortAmbush() {
+  if (missionPhase !== 4 || escortAmbushTriggered || escortAmbushCleared) return;
+  escortAmbushTriggered = true;
+  createEnemy(-20, -132, 8, 'soldado_corrompido');
+  createEnemy(21, -137, 9, 'errante');
+  createEnemy(2, -144, 10, 'rastejador');
+  showToast('EMBOSCADA NA ESTRADA', 'Atiradores surgiram na encosta. Use as rotas laterais e mantenha o operador protegido.', 6);
+  showRadio('Moretti: “Contato na curva! Há fogo vindo da encosta direita. Raul, não deixe o operador exposto!”', 5.5);
+  playThreatSound();
 }
 function startFinalDefense() {
-  if (missionPhase !== 3) return;
-  missionPhase = 4; finalSpawnTimer = 2.3; finalWaveSpawned = false;
-  updateObjective('PROTEJA O OPERADOR · PREPARE-SE');
-  showToast('CONTATO NO POSTO', 'Novas criaturas surgiram perto do portão. Prepare-se para defender o rádio.', 6);
-  showRadio('Operador: “O sinal está voltando... Não! Há algo se movendo na névoa!”', 5);
-  playThreatSound();
+  if (missionPhase !== 4 || !escortAmbushCleared) return;
+  missionPhase = 5; finalSpawnTimer = 2.2; finalWaveSpawned = false; defenseWave = 0;
+  updateObjective('DEFENDA O POSTO · PREPARE-SE');
+  showToast('ATAQUE AO POSTO', 'O posto está sob ataque. Use as barricadas e segure as duas ondas.', 6);
+  showRadio('Operador: “O transmissor está quase pronto... Proteja a entrada!”', 5);
+  playThreatSound(); captureCheckpoint(5);
 }
 function spawnFinalWave() {
   finalWaveSpawned = true;
-  createEnemy(-11.4, -82, 3, 'soldado_corrompido');
-  createEnemy(11.4, -82, 4);
-  createEnemy(-2.7, -92, 5, 'rastejador');
-  updateObjective('DEFENDA O POSTO · 3 AMEAÇAS');
-  showRadio('Moretti: “Contato armado à esquerda! Há um soldado corrompido com fuzil. Use as barricadas!”', 5.5);
-  showToast('INIMIGO ARMADO', 'O soldado está mirando. Quebre a linha de visão, use cobertura e avance entre os disparos.', 6);
+  if (missionPhase === 5 && defenseWave === 0) {
+    createEnemy(-19, -161, 11, 'soldado_corrompido');
+    createEnemy(19, -163, 12, 'errante');
+    createEnemy(0, -170, 13, 'rastejador');
+    createEnemy(9, -154, 14, 'soldado_corrompido');
+    defenseWave = 1;
+    updateObjective('DEFENDA O POSTO · ONDA 1 / 2');
+    showRadio('Moretti: “Dois armados na linha externa! Quebre a mira deles e não abandone a entrada!”', 5.5);
+  } else if (missionPhase === 6 && defenseWave === 1) {
+    createEnemy(-25, -157, 15, 'soldado_corrompido');
+    createEnemy(25, -157, 16, 'soldado_corrompido');
+    createEnemy(-9, -169, 17, 'errante');
+    createEnemy(10, -169, 18, 'errante');
+    createEnemy(0, -171, 19, 'rastejador');
+    defenseWave = 2;
+    updateObjective('DEFENDA O POSTO · ONDA 2 / 2');
+    showRadio('Operador: “Mais contatos! Eles estão tentando cercar o posto. Segure a posição!”', 5.5);
+  }
+  showToast('CONTATO INIMIGO', 'Alterne entre fuzil e pistola, use cobertura e recolha munição entre as ondas.', 5.5);
   playThreatSound();
 }
 function triggerAmbush() {
   if (ambushTriggered) return;
   ambushTriggered = true; missionPhase = 1;
-  createEnemy(-9.2, -34.5, 0);
-  createEnemy(10.0, -36.5, 1);
-  createEnemy(-1.0, -44.0, 2, 'soldado_corrompido');
-  updateObjective('ELIMINE AS AMEAÇAS · 0 / 3');
-  showToast('EMBOSCADA', 'Movimento à frente! Um soldado corrompido está armado. Procure cobertura e responda ao fogo.', 6);
-  showRadio('Moretti: “Raul, contato desconhecido! Há criaturas entre os veículos e um deles está armado. Proteja-se!”', 5.8);
+  createEnemy(-16, -31, 0);
+  createEnemy(16, -38, 1);
+  createEnemy(-2, -49, 2, 'soldado_corrompido');
+  createEnemy(8, -54, 3, 'rastejador');
+  updateObjective('ELIMINE A EMBOSCADA · 0 / 4');
+  showToast('EMBOSCADA', 'Contato em três direções! Use os caminhões como cobertura. Há um soldado armado na encosta.', 6);
+  showRadio('Moretti: “Raul, contato! Criaturas entre os veículos e um soldado armado na encosta. Proteja-se!”', 5.8);
   playBeep(190, .3);
+}
+function updateRelayEncounters() {
+  if (missionPhase !== 2) return;
+  for (const relay of relayStations) {
+    if (relay.disabled || relay.guardsSpawned) continue;
+    const distance = Math.hypot(player.position.x - relay.x, player.position.z - relay.z);
+    if (distance > 19) continue;
+    relay.guardsSpawned = true;
+    const sign = relay.code === 'A' ? -1 : 1;
+    const encounterIndex = relay.code === 'A' ? 4 : 6;
+    createEnemy(relay.x - sign * 4.2, relay.z - 3.5, encounterIndex, 'soldado_corrompido');
+    createEnemy(relay.x + sign * 3.2, relay.z + 4.0, encounterIndex + 1, 'errante');
+    showToast(`REPETIDOR ${relay.code} PROTEGIDO`, 'Elimine a guarda do sinal antes de interagir com o equipamento.', 4.5);
+    playThreatSound();
+  }
+}
+function disableRelay(relay) {
+  if (!relay || relay.disabled) return;
+  relay.disabled = true; relayDisabledCount++;
+  relay.core.material.color?.setHex(0x69766a); relay.core.material.emissive?.setHex(0x18251b);
+  relay.light.intensity = 0; relay.ring.material.color?.setHex(0x6d756a); relay.ring.material.opacity = .22;
+  showToast(`REPETIDOR ${relay.code} DESATIVADO`, 'Um dos focos de interferência foi desligado.', 3.5);
+  showRadio(relayDisabledCount === 1 ? 'Moretti: “Bom trabalho. Ainda há outro repetidor ativo. Encontre o segundo ponto.”' : 'Moretti: “Sinal interrompido! Localizamos o operador na fazenda em ruínas.”', 4.5);
+  updateObjective(`DESATIVE OS REPETIDORES JANUS · ${relayDisabledCount} / 2`);
+  captureCheckpoint(2);
+  if (relayDisabledCount === 2) {
+    missionPhase = 3; updateObjective('RESGATE O OPERADOR DE RÁDIO');
+    showToast('SINAL RESTABELECIDO', 'A última transmissão do operador veio da fazenda em ruínas, a oeste.', 5);
+    captureCheckpoint(3);
+  }
+  playBeep(720, .18);
 }
 
 // ---------- Interface e objetivos. ----------
 function updateObjective(text) { ui.objective.textContent = text; }
 function updateHUD() {
+  const objectiveStep = Math.min(9, missionPhase + 1);
+  $('objective-step').textContent = `ETAPA ${String(objectiveStep).padStart(2, '0')} / 09`;
+  $('objective-progress-fill').style.width = `${objectiveStep / 9 * 100}%`;
   ui.health.textContent = Math.max(0, Math.round(health)); ui.healthFill.style.width = `${Math.max(0, health)}%`;
   ui.healthFill.style.background = health <= 30 ? '#d16b59' : '#c0a16c';
   const nearestAnomaly = janusAnomalies.length ? Math.min(...janusAnomalies.map(a =>
@@ -1395,14 +1584,21 @@ function updateHUD() {
   $('noise-value').textContent = noiseLabel;
   $('noise-status').dataset.level = noiseLabel.toLowerCase().replace(' ', '-');
   $('reload-progress').style.width = isReloading ? `${Math.round((1 - reloadTime / activeWeapon().reload) * 100)}%` : '0%';
-  const target = missionPhase <= 1 ? { x: 0, z: -22 } : missionPhase === 2 ? { x: 4.7, z: -45.5 } : { x: 0, z: -99 };
+  let target = { x: 0, z: -25 };
+  if (missionPhase === 2) {
+    const nextRelay = relayStations.find(r => !r.disabled);
+    if (nextRelay) target = { x: nextRelay.x, z: nextRelay.z };
+  } else if (missionPhase === 3) target = { x: -20.5, z: -110.5 };
+  else if (missionPhase === 7) target = { x: -4.2, z: -168.5 };
+  else if (missionPhase === 8) target = { x: 0, z: -184 };
+  else if (missionPhase >= 4) target = { x: 0, z: -174 };
   $('objective-distance').textContent = `${Math.round(Math.hypot(player.position.x - target.x, player.position.z - target.z))} m`;
-  $('map-player').style.top = `${Math.max(8, Math.min(92, 92 - (28 - player.position.z) / 1.36))}%`;
-  $('map-player').style.left = `${50 + player.position.x * 1.5}%`;
+  $('map-player').style.top = `${Math.max(5, Math.min(95, 92 - (42 - player.position.z) / 2.42))}%`;
+  $('map-player').style.left = `${Math.max(8, Math.min(92, 50 + player.position.x * .72))}%`;
   const angleToTarget = Math.atan2(target.x - player.position.x, -(target.z - player.position.z));
   const delta = Math.atan2(Math.sin(angleToTarget - yaw), Math.cos(angleToTarget - yaw));
   $('objective-arrow').style.transform = `rotate(${delta}rad)`;
-  $('objective-arrow').style.opacity = missionPhase === 1 || missionPhase === 4 ? '.25' : '1';
+  $('objective-arrow').style.opacity = missionPhase === 1 || missionPhase === 4 || missionPhase === 5 || missionPhase === 6 ? '.35' : '1';
   $('escort-status').textContent = operatorRescued && missionPhase <= 4 && escortGroup?.visible
     ? `OPERADOR · ${Math.round(Math.hypot(player.position.x - escortGroup.position.x, player.position.z - escortGroup.position.z))} m` : '';
 }
@@ -1414,9 +1610,21 @@ function showRadio(text, duration = 4) {
 }
 function updateInteractPrompt() {
   activeInteractable = null;
+  if (missionPhase === 2) {
+    for (const relay of relayStations) {
+      if (relay.disabled) continue;
+      const d = Math.hypot(player.position.x - relay.x, player.position.z - relay.z);
+      const defendersAlive = enemies.some(e => e.alive && Math.hypot(e.group.position.x - relay.x, e.group.position.z - relay.z) < 12);
+      if (d < 3.2 && !defendersAlive) activeInteractable = { type: 'relay', relay, label: `DESATIVAR REPETIDOR ${relay.code}` };
+    }
+  }
   if (operatorGroup && !operatorRescued) {
     const d = Math.hypot(player.position.x - operatorGroup.position.x, player.position.z - operatorGroup.position.z);
-    if (d < 2.9 && missionPhase >= 2) activeInteractable = { type: 'operator', label: 'RESGATAR OPERADOR DE RÁDIO' };
+    if (d < 2.9 && missionPhase === 3) activeInteractable = { type: 'operator', label: 'RESGATAR OPERADOR DE RÁDIO' };
+  }
+  if (missionPhase === 7 && outpostConsole?.visible) {
+    const d = Math.hypot(player.position.x - outpostConsole.position.x, player.position.z - outpostConsole.position.z);
+    if (d < 3.2) activeInteractable = { type: 'console', label: 'ATIVAR RÁDIO DE EMERGÊNCIA' };
   }
   for (const p of pickups) {
     if (p.used) continue;
@@ -1429,14 +1637,23 @@ function updateInteractPrompt() {
 }
 function interact() {
   if (!activeInteractable || state !== 'playing') return;
-  if (activeInteractable.type === 'operator') {
-    operatorRescued = true; missionPhase = 3; operatorGroup.visible = false;
+  if (activeInteractable.type === 'relay') {
+    disableRelay(activeInteractable.relay);
+  } else if (activeInteractable.type === 'console') {
+    missionPhase = 8; if (outpostConsole) outpostConsole.visible = false; gateOpening = true;
+    updateObjective('ALCANCE O PONTO DE EXTRAÇÃO');
+    showToast('TRANSMISSÃO ENVIADA', 'O posto recebeu o alerta. Atravesse o portão e alcance a estrada de extração.', 5.5);
+    showRadio('Moretti: “Alerta enviado! Portão abrindo. Vamos tirar você daí, Raul!”', 5);
+    captureCheckpoint(8); playBeep(820, .22);
+  } else if (activeInteractable.type === 'operator') {
+    operatorRescued = true; missionPhase = 4; operatorGroup.visible = false;
     if (operatorCollider) operatorCollider.disabled = true;
-    escortGroup.position.set(4.7, 0, -45.5); escortGroup.visible = true;
+    escortGroup.position.set(-20.5, 0, -110.5); escortGroup.visible = true;
+    escortAmbushTriggered = false; escortAmbushCleared = false;
     updateObjective('ESCOLTE O OPERADOR ATÉ O POSTO');
     showToast('OPERADOR RESGATADO', 'O operador vai acompanhar você. Não se afaste demais.', 5);
     showRadio('Operador: “Eles vieram da encosta. Não eram soldados. Preciso chegar ao posto para avisar a todos.”', 5.5);
-    health = Math.max(60, health); captureCheckpoint(3); playBeep(740, .2);
+    health = Math.max(60, health); captureCheckpoint(4); playBeep(740, .2);
   } else if (activeInteractable.type === 'pickup') {
     const p = activeInteractable.pickup;
     if (p.type === 'medkit' && health >= 100) { showToast('KIT MÉDICO', 'Sua vida já está cheia.', 2); return; }
@@ -1458,7 +1675,7 @@ function showInfo(type) {
   infoReturnScreen = state === 'paused' ? ui.pause : ui.menu;
   const content = $('info-content');
   if (type === 'objectives') {
-    content.innerHTML = `<div class="eyebrow"><i></i> ORDEM DE OPERAÇÃO</div><h3>OBJETIVOS E CONTROLES</h3><p><b>Missão:</b> Cinzas na Estrada.</p><p><b>Etapa atual:</b> ${ui.objective.textContent}.</p><ol><li>Avançar até o comboio destruído.</li><li>Eliminar as ameaças da emboscada, incluindo o Soldado Corrompido armado.</li><li>Resgatar o operador de rádio.</li><li>Escoltar o operador até o posto avançado.</li><li>Defender o posto e atravessar o portão.</li></ol><p><b>Documento opcional:</b> ${intelFound ? 'encontrado' : 'não encontrado'}.</p><div class="control-list"><div><span>Mover</span><kbd>W A S D</kbd></div><div><span>Olhar</span><kbd>MOUSE</kbd></div><div><span>Disparar</span><kbd>CLIQUE ESQ.</kbd></div><div><span>Mirar</span><kbd>CLIQUE DIR.</kbd></div><div><span>Correr</span><kbd>SHIFT</kbd></div><div><span>Agachar</span><kbd>CTRL</kbd></div><div><span>Pular</span><kbd>ESPAÇO</kbd></div><div><span>Interagir</span><kbd>E</kbd></div><div><span>Recarregar</span><kbd>R</kbd></div><div><span>Trocar arma</span><kbd>1 / 2 / RODA</kbd></div><div><span>Granada</span><kbd>G</kbd></div><div><span>Corpo a corpo</span><kbd>F</kbd></div><div><span>Lanterna</span><kbd>Q</kbd></div><div><span>Pausar</span><kbd>ESC</kbd></div></div>`;
+    content.innerHTML = `<div class="eyebrow"><i></i> ORDEM DE OPERAÇÃO</div><h3>OBJETIVOS E CONTROLES</h3><p><b>Missão:</b> Cinzas na Estrada.</p><p><b>Etapa atual:</b> ${ui.objective.textContent}.</p><ol><li>Avançar até o comboio e conter a emboscada.</li><li>Desativar os dois repetidores Janus nas rotas laterais.</li><li>Resgatar o operador na fazenda em ruínas.</li><li>Escoltar o operador; sobreviver à emboscada na curva.</li><li>Defender o posto avançado durante duas ondas.</li><li>Ativar o rádio de emergência e alcançar a extração.</li></ol><p><b>Documento opcional:</b> ${intelFound ? 'encontrado' : 'não encontrado'}.</p><div class="control-list"><div><span>Mover</span><kbd>W A S D</kbd></div><div><span>Olhar</span><kbd>MOUSE</kbd></div><div><span>Disparar</span><kbd>CLIQUE ESQ.</kbd></div><div><span>Mirar</span><kbd>CLIQUE DIR.</kbd></div><div><span>Correr</span><kbd>SHIFT</kbd></div><div><span>Agachar</span><kbd>CTRL</kbd></div><div><span>Pular</span><kbd>ESPAÇO</kbd></div><div><span>Interagir</span><kbd>E</kbd></div><div><span>Recarregar</span><kbd>R</kbd></div><div><span>Trocar arma</span><kbd>1 / 2 / RODA</kbd></div><div><span>Granada</span><kbd>G</kbd></div><div><span>Corpo a corpo</span><kbd>F</kbd></div><div><span>Lanterna</span><kbd>Q</kbd></div><div><span>Pausar</span><kbd>ESC</kbd></div></div>`;
   } else if (type === 'arsenal') {
     content.innerHTML = `<div class="eyebrow"><i></i> ARQUIVO DE CAMPO</div><h3>ARSENAL / BESTIÁRIO</h3><p><b>Fuzil semiautomático:</b> arma inicial de médio alcance. Carregador de 8 cartuchos, recarga manual e boa precisão quando o jogador controla o recuo.</p><p><b>Pistola de serviço:</b> arma secundária de 12 tiros, recarga rápida e menor dano. Pressione 2 ou use a roda do mouse para equipar; 1 retorna ao fuzil.</p><p><b>Errante:</b> criatura humanoide atraída por movimento e ruído. Ataca a curta distância; cabeça e núcleo violeta são vulneráveis.</p><p><b>Rastejador:</b> ameaça veloz, de silhueta baixa, encontrada perto do posto. Cuidado com o avanço rápido e a preparação do salto.</p><p><b>Soldado Corrompido:</b> antigo combatente tomado pelo Vazio, equipado com fuzil. Mantém distância, prepara a mira e dispara em rajadas espaçadas. Interrompa a linha de visão usando caminhões, muros e barricadas.</p><p><b>Equipamento:</b> granadas (G), golpe corpo a corpo (F), lanterna (Q), kit médico e caixas de munição podem ser encontrados no cenário. O arsenal completo será liberado ao longo da campanha.</p>`;
   } else if (type === 'controls') {
@@ -1467,7 +1684,7 @@ function showInfo(type) {
     content.innerHTML = `<div class="eyebrow"><i></i> CAMPANHA · 01 / 12</div><h3>SELEÇÃO DE CAPÍTULO</h3><p><b>01 — Cinzas na Estrada</b> · ${completedMission ? 'CONCLUÍDA' : 'NÃO CONCLUÍDA'}</p><p>02 — A Vila sem Sinos · EM DESENVOLVIMENTO</p><button id="replay-chapter" class="action-button">REJOGAR MISSÃO 01</button>`;
     $('replay-chapter').addEventListener('click', () => newCampaign());
   } else if (type === 'credits') {
-    content.innerHTML = `<div class="eyebrow"><i></i> REGISTRO DE PRODUÇÃO</div><h3>CRÉDITOS</h3><p><b>OPERAÇÃO ECLIPSE: A GUERRA DOS ESQUECIDOS</b></p><p>Projeto original de campanha FPS em Three.js. Versão jogável da Missão 01 — 0.7.0.</p><p>Direção: ficção alternativa de guerra sobrenatural. Personagens, unidade, eventos e Projeto Janus são elementos ficcionais.</p><p>Este protótipo utiliza modelos e rigs procedurais, animações por ossos e áudio ambiente sintetizado; modelos artísticos, captura de movimento e trilha sonora definitiva ainda serão produzidos.</p>`;
+    content.innerHTML = `<div class="eyebrow"><i></i> REGISTRO DE PRODUÇÃO</div><h3>CRÉDITOS</h3><p><b>OPERAÇÃO ECLIPSE: A GUERRA DOS ESQUECIDOS</b></p><p>Projeto original de campanha FPS em Three.js. Versão jogável da Missão 01 — 0.8.0.</p><p>Direção: ficção alternativa de guerra sobrenatural. Personagens, unidade, eventos e Projeto Janus são elementos ficcionais.</p><p>Este protótipo utiliza modelos e rigs procedurais, animações por ossos e áudio ambiente sintetizado; modelos artísticos, captura de movimento e trilha sonora definitiva ainda serão produzidos.</p>`;
   } else if (type === 'options') {
     content.innerHTML = `<div class="eyebrow"><i></i> CONFIGURAÇÃO DO SISTEMA</div><h3>OPÇÕES</h3>
       <div class="option-row"><label for="opt-volume">VOLUME GERAL</label><input id="opt-volume" type="range" min="0" max="100" value="${settings.volume}"></div>
@@ -1495,11 +1712,13 @@ function showInfo(type) {
   showScreen(ui.info);
 }
 function applyQuality() {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, settings.quality === 'baixo' ? 1 : 1.5));
+  renderer.setPixelRatio(qualityPixelRatio());
   renderer.shadowMap.enabled = settings.quality === 'alto';
   if (sunLight) sunLight.castShadow = settings.quality === 'alto';
   applySceneryDensity(); applyRainQuality();
-  if (dustField) dustField.geometry.setDrawRange(0, settings.quality === 'baixo' ? 50 : 115);
+  if (grassField) grassField.receiveShadow = settings.quality === 'alto';
+  if (groundDebris) groundDebris.receiveShadow = settings.quality === 'alto';
+  if (dustField) dustField.geometry.setDrawRange(0, settings.quality === 'baixo' ? 30 : settings.quality === 'alto' ? 80 : 50);
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
@@ -1513,7 +1732,9 @@ function resetMission() {
   if (escortGroup?.userData.navigation) escortGroup.userData.navigation = { path: null, pathIndex: 0, pathTimer: 0, pathGoal: -1 };
   health = 100; ammo = 8; reserveAmmo = 40; pistolAmmo = 12; pistolReserve = 36; currentWeapon = 'rifle'; grenades = 2; stamina = 100; intelFound = false; grenadeCooldown = 0; meleeCooldown = 0; cameraShake = 0;
   missionPhase = 0; operatorRescued = false; ambushTriggered = false; missionComplete = false;
-  finalSpawnTimer = -1; finalWaveSpawned = false; gateOpening = false; gateOpen = false;
+  relayDisabledCount = 0; relayStations.forEach(r => { r.disabled = false; r.guardsSpawned = false; r.group.visible = true; r.core.material.color?.setHex(0xa86be0); r.core.material.emissive?.setHex(0x6c2ca0); r.light.intensity = settings.quality === 'baixo' ? .45 : 1; r.ring.material.color?.setHex(0xc28bf0); r.ring.material.opacity = .8; });
+  escortAmbushTriggered = false; escortAmbushCleared = false; defenseWave = 0;
+  finalSpawnTimer = -1; finalWaveSpawned = false; gateOpening = false; gateOpen = false; if (outpostConsole) outpostConsole.visible = false;
   isReloading = false; reloadTime = 0; fireCooldown = 0; aiming = false; muzzleTime = 0;
   ui.reload.textContent = ''; updateWeaponVisibility(); ui.radio.classList.add('hidden');
   warningTime = 0; damageDirectionTime = 0;
@@ -1524,64 +1745,86 @@ function resetMission() {
   if (escortGroup) escortGroup.visible = false;
   if (outpostGate) { outpostGate.visible = true; outpostGate.position.y = 1.35; }
   pickups.forEach(p => { p.used = false; p.group.visible = true; });
-  player.position.set(0, 1.7, 28); player.velocity.set(0,0,0); yaw = 0; pitch = 0; camera.rotation.set(0, 0, 0);
+  player.position.set(0, 1.7, 42); player.velocity.set(0,0,0); yaw = 0; pitch = 0; camera.rotation.set(0, 0, 0);
   camera.position.copy(player.position);
   keys = Object.create(null);
   updateObjective('AVANCE ATÉ O COMBOIO DESTRUÍDO'); updateHUD();
   captureCheckpoint(0);
 }
 function loadCheckpoint() {
-  const cp = checkpoint || { x: 0, z: 28, health: 100, ammo: 8, reserve: 40, phase: 0 };
+  const cp = checkpoint || { x: 0, z: 42, health: 100, ammo: 8, reserve: 40, phase: 0 };
   const num = (value, fallback, min, max) => Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
-  player.position.set(num(cp.x, 0, -17, 17), 1.7, num(cp.z, 28, -101, 30));
+  const legacy = (savedGame?.version || 4) < 4;
+  let phase = num(cp.phase, 0, 0, 8);
+  let legacyFinished = false;
+  if (legacy) {
+    if (phase === 2) phase = 3;
+    else if (phase === 3) phase = 4;
+    else if (phase === 4) phase = 5;
+    else if (phase >= 5) { phase = 8; legacyFinished = true; }
+  }
+  player.position.set(num(cp.x, 0, -47, 47), 1.7, legacyFinished ? -170 : num(cp.z, 42, -188, 48));
+  if (legacy && phase === 5) player.position.z = -160;
   player.velocity.set(0,0,0); health = num(cp.health, 100, 1, 100); ammo = num(cp.ammo, 8, 0, 8);
-  reserveAmmo = num(cp.reserve, 40, 0, 80);
-  pistolAmmo = num(cp.pistolAmmo, 12, 0, 12);
-  pistolReserve = num(cp.pistolReserve, 36, 0, 96);
+  reserveAmmo = num(cp.reserve, 40, 0, 80); pistolAmmo = num(cp.pistolAmmo, 12, 0, 12); pistolReserve = num(cp.pistolReserve, 36, 0, 96);
   currentWeapon = WEAPONS[cp.currentWeapon] ? cp.currentWeapon : 'rifle';
   updateWeaponVisibility(); grenades = num(cp.grenades, 2, 0, 3); stamina = num(cp.stamina, 100, 0, 100);
-  missionPhase = num(cp.phase, 0, 0, 5);
-  operatorRescued = !!cp.operatorRescued; intelFound = !!cp.intelFound;
-  kills = num(cp.kills, missionPhase >= 2 ? 3 : 0, 0, TOTAL_ENEMIES);
-  shotsFired = num(cp.shotsFired, 0, 0, 100000);
-  shotsHit = num(cp.shotsHit, 0, 0, shotsFired);
+  missionPhase = phase; operatorRescued = !!cp.operatorRescued || (legacy && phase >= 4); intelFound = !!cp.intelFound;
+  relayStations.forEach((r, i) => {
+    r.disabled = legacy && phase >= 3 ? true : !!cp.relaysDisabled?.[i];
+    r.guardsSpawned = false; r.group.visible = true;
+    r.core.material.color?.setHex(r.disabled ? 0x69766a : 0xa86be0);
+    r.core.material.emissive?.setHex(r.disabled ? 0x18251b : 0x6c2ca0);
+    r.light.intensity = r.disabled ? 0 : (settings.quality === 'baixo' ? .45 : 1);
+    r.ring.material.color?.setHex(r.disabled ? 0x6d756a : 0xc28bf0); r.ring.material.opacity = r.disabled ? .22 : .8;
+  });
+  relayDisabledCount = relayStations.filter(r => r.disabled).length;
+  escortAmbushCleared = !!cp.escortAmbushCleared || (legacy && phase >= 5);
+  escortAmbushTriggered = false;
+  defenseWave = num(cp.defenseWave, phase === 5 ? 1 : phase === 6 ? 2 : phase >= 7 ? 2 : 0, 0, 2);
+  kills = num(cp.kills, phase >= 3 ? 4 : 0, 0, TOTAL_ENEMIES);
+  shotsFired = num(cp.shotsFired, 0, 0, 100000); shotsHit = num(cp.shotsHit, 0, 0, shotsFired);
   elapsedMission = num(cp.elapsedMission, 0, 0, 86400);
-  ambushTriggered = missionPhase >= 1;
-  finalWaveSpawned = missionPhase >= 5;
-  finalSpawnTimer = -1; gateOpening = missionPhase >= 5; gateOpen = false;
-  missionComplete = false;
-  isReloading = false; reloadTime = 0; fireCooldown = 0; aiming = false;
-  ui.reload.textContent = '';
+  ambushTriggered = phase >= 1; finalWaveSpawned = phase >= 5;
+  finalSpawnTimer = -1; gateOpening = false; gateOpen = phase >= 8; missionComplete = false;
+  isReloading = false; reloadTime = 0; fireCooldown = 0; aiming = false; ui.reload.textContent = '';
   if (operatorGroup) operatorGroup.visible = !operatorRescued;
   if (operatorCollider) operatorCollider.disabled = operatorRescued;
   if (escortGroup) {
     escortGroup.visible = operatorRescued;
-    escortGroup.position.set(num(cp.x, 0, -17, 17) + 1, 0, num(cp.z, -45.5, -101, 30) + 1.7);
+    const defaultEscort = phase >= 5 ? { x: 5.2, z: -155 } : { x: num(cp.x, -20.5, -47, 47) + 1, z: num(cp.z, -110.5, -188, 48) + 1.7 };
+    escortGroup.position.set(num(cp.escortX, defaultEscort.x, -47, 47), 0, num(cp.escortZ, defaultEscort.z, -188, 48));
+    if (legacy && phase >= 4) escortGroup.position.set(5.2, 0, -155);
+    if (escortGroup.userData.navigation) escortGroup.userData.navigation = { path: null, pathIndex: 0, pathTimer: 0, pathGoal: -1 };
   }
-  if (outpostGate) { outpostGate.visible = true; outpostGate.position.y = missionPhase >= 5 ? 5.5 : 1.35; }
-  if (missionPhase >= 5) { gateOpen = true; gateOpening = false; }
-  pickups.forEach((p, i) => {
-    p.used = Array.isArray(cp.pickups) ? !!cp.pickups[i] : (p.type === 'intel' && intelFound);
-    p.group.visible = !p.used;
-  });
+  if (outpostGate) { outpostGate.visible = true; outpostGate.position.y = gateOpen ? 5.5 : 1.35; }
+  if (outpostConsole) outpostConsole.visible = phase === 7;
+  pickups.forEach((p, i) => { p.used = Array.isArray(cp.pickups) ? !!cp.pickups[i] : (p.type === 'intel' && intelFound); p.group.visible = !p.used; });
   enemies.forEach(disposeEnemy); enemies = [];
   grenadeProjectiles.forEach(g => { scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose(); }); grenadeProjectiles = []; grenadeCooldown = 0; meleeCooldown = 0;
   noiseEvent = null; noiseEvents = []; noiseBurstTime = 0; loudNoiseUntil = 0;
-  if (escortGroup?.userData.navigation) escortGroup.userData.navigation = { path: null, pathIndex: 0, pathTimer: 0, pathGoal: -1 };
-  if (missionPhase === 1) {
-    createEnemy(-9.2, -34.5, 0); createEnemy(10.0, -36.5, 1); createEnemy(-1.0, -44.0, 2, 'soldado_corrompido');
+  if (phase === 1) {
+    createEnemy(-16, -31, 0); createEnemy(16, -38, 1); createEnemy(-2, -49, 2, 'soldado_corrompido'); createEnemy(8, -54, 3, 'rastejador');
     kills = 0;
-  } else if (missionPhase === 4) {
-    finalWaveSpawned = true;
-    createEnemy(-11.4, -82, 3, 'soldado_corrompido'); createEnemy(11.4, -82, 4); createEnemy(-2.7, -92, 5, 'rastejador');
+  } else if (phase === 4 && !escortAmbushCleared) {
+    escortAmbushTriggered = true;
+    createEnemy(-20, -132, 8, 'soldado_corrompido'); createEnemy(21, -137, 9, 'errante'); createEnemy(2, -144, 10, 'rastejador');
+  } else if (phase === 5) {
+    finalWaveSpawned = true; defenseWave = 1;
+    createEnemy(-19, -161, 11, 'soldado_corrompido'); createEnemy(19, -163, 12, 'errante'); createEnemy(0, -170, 13, 'rastejador'); createEnemy(9, -154, 14, 'soldado_corrompido');
+  } else if (phase === 6) {
+    finalWaveSpawned = true; defenseWave = 2;
+    createEnemy(-25, -157, 15, 'soldado_corrompido'); createEnemy(25, -157, 16, 'soldado_corrompido'); createEnemy(-9, -169, 17, 'errante'); createEnemy(10, -169, 18, 'errante'); createEnemy(0, -171, 19, 'rastejador');
   }
   updateObjective([
-    'AVANCE ATÉ O COMBOIO DESTRUÍDO', 'ELIMINE AS AMEAÇAS · 0 / 3',
-    'RESGATE O OPERADOR DE RÁDIO', 'ESCOLTE O OPERADOR ATÉ O POSTO',
-    'DEFENDA O POSTO · 3 AMEAÇAS', 'ATRAVESSE O PORTÃO DO POSTO AVANÇADO'
+    'AVANCE ATÉ O COMBOIO DESTRUÍDO', 'ELIMINE A EMBOSCADA · 0 / 4',
+    `DESATIVE OS REPETIDORES JANUS · ${relayDisabledCount} / 2`, 'RESGATE O OPERADOR DE RÁDIO',
+    'ESCOLTE O OPERADOR ATÉ O POSTO', 'DEFENDA O POSTO · ONDA 1 / 2',
+    'DEFENDA O POSTO · ONDA 2 / 2', 'ATIVE O RÁDIO DE EMERGÊNCIA', 'ALCANCE O PONTO DE EXTRAÇÃO'
   ][missionPhase]);
   keys = Object.create(null); updateHUD();
 }
+
 function newCampaign() {
   clearSave(); pendingContinue = false; resetMission();
   showScreen(ui.briefing); state = 'briefing';
@@ -1600,8 +1843,8 @@ function beginGameplay() {
   state = 'playing'; showScreen(null); ui.hud.classList.remove('hidden'); updateWeaponVisibility();
   camera.position.copy(player.position); camera.rotation.set(pitch, yaw, 0);
   requestLock();
-  showToast('OBJETIVO', 'Avance pela estrada. WASD move, SHIFT corre, botão direito mira.', 6);
-  showRadio('Moretti: “Raul, está ouvindo? O comboio parou de responder há seis minutos. Encontre o operador.”', 6);
+  showToast('OBJETIVO', 'Avance até o comboio. Use as rotas laterais, cubra-se e siga os objetivos táticos.', 6);
+  showRadio('Moretti: “Raul, está ouvindo? O comboio caiu e o sinal foi dividido em dois pontos. Neutralize os repetidores e encontre o operador.”', 6);
 }
 function pauseGame() {
   if (state !== 'playing') return;
@@ -1622,13 +1865,14 @@ function die() {
   intentionalUnlock = true; if (document.pointerLockElement) document.exitPointerLock();
 }
 function finishMission() {
-  if (missionComplete || missionPhase !== 5 || !gateOpen) return;
+  if (missionComplete || missionPhase !== 8 || !gateOpen) return;
   missionComplete = true; state = 'complete'; ui.hud.classList.add('hidden');
   $('result-kills').textContent = kills;
   $('result-accuracy').textContent = `${shotsFired ? Math.round(shotsHit / shotsFired * 100) : 0}%`;
   $('result-health').textContent = Math.round(health);
   $('result-time').textContent = `${String(Math.floor(elapsedMission / 60)).padStart(2, '0')}:${String(Math.floor(elapsedMission % 60)).padStart(2, '0')}`;
   $('result-intel').textContent = intelFound ? '01 / 01' : '00 / 01';
+  $('result-kills').parentElement?.setAttribute?.('data-total', String(TOTAL_ENEMIES));
   completedMission = { version: 1, mission: '01', bestTime: Math.min(completedMission?.bestTime ?? Infinity, elapsedMission), intelFound: intelFound || !!completedMission?.intelFound };
   writeJSON(COMPLETION_KEY, completedMission);
   showScreen(ui.complete); intentionalUnlock = true; if (document.pointerLockElement) document.exitPointerLock();
@@ -1637,8 +1881,8 @@ function finishMission() {
 
 // ---------- Combate e movimentação. ----------
 function canMoveTo(x, z) {
-  if (x < -18 || x > 18 || z > 33 || z < -105) return false;
-  if (z < -95.3 && (!gateOpen || Math.abs(x) > 5.5)) return false;
+  if (x < -47.5 || x > 47.5 || z > 49 || z < -189) return false;
+  if (z < -173.5 && (!gateOpen || Math.abs(x) > 5.5)) return false;
   for (const c of colliders) if (!c.disabled && Math.hypot(x - c.x, z - c.z) < c.r + player.radius) return false;
   return true;
 }
@@ -1910,12 +2154,12 @@ function updatePlayer(dt) {
     pistolMuzzleFlash.visible = false; pistolMuzzleFlash.userData.light.intensity = 0;
   }}
   if (isReloading) { reloadTime -= dt; if (reloadTime <= 0) finishReload(); }
-  if (missionPhase === 0 && player.position.z < -8) {
-    missionPhase = 1; updateObjective('ELIMINE AS AMEAÇAS · 0 / 3'); triggerAmbush();
-  }
+  if (missionPhase === 0 && player.position.z < 4) triggerAmbush();
   updateEscort(dt); updateGrenades(dt);
-  if (missionPhase === 3 && player.position.z < -78 && escortGroup.position.z < -72) startFinalDefense();
-  if (missionPhase === 4 && !finalWaveSpawned) {
+  if (missionPhase === 2) updateRelayEncounters();
+  if (missionPhase === 4 && !escortAmbushTriggered && !escortAmbushCleared && player.position.z < -128 && escortGroup.position.z < -124) startEscortAmbush();
+  if (missionPhase === 4 && escortAmbushTriggered && escortAmbushCleared && player.position.z < -160 && escortGroup.position.z < -153) startFinalDefense();
+  if ((missionPhase === 5 || missionPhase === 6) && !finalWaveSpawned) {
     finalSpawnTimer -= dt;
     if (finalSpawnTimer <= 0) spawnFinalWave();
   }
@@ -1923,14 +2167,14 @@ function updatePlayer(dt) {
     outpostGate.position.y = Math.min(5.5, outpostGate.position.y + dt * 1.75);
     if (outpostGate.position.y >= 5.5) { gateOpening = false; gateOpen = true; }
   }
-  if (missionPhase === 5 && gateOpen && player.position.z < -99 && Math.abs(player.position.x) < 5.5) finishMission();
+  if (missionPhase === 8 && gateOpen && player.position.z < -183.5 && Math.abs(player.position.x) < 6.5) finishMission();
   if (player.position.z < -17 && !ambushTriggered) triggerAmbush();
   updateInteractPrompt();
 }
 function updateEscort(dt) {
   if (!operatorRescued || !escortGroup?.visible || missionPhase >= 5) return;
-  const followX = missionPhase === 4 ? 3.8 : player.position.x + Math.sin(yaw) * 2.2;
-  const followZ = missionPhase === 4 ? -76.5 : player.position.z + Math.cos(yaw) * 2.2;
+  const followX = missionPhase === 4 ? 5.2 : player.position.x + Math.sin(yaw) * 2.2;
+  const followZ = missionPhase === 4 ? -155 : player.position.z + Math.cos(yaw) * 2.2;
   const dx = followX - escortGroup.position.x, dz = followZ - escortGroup.position.z;
   const distance = Math.hypot(dx, dz);
   if (distance > 1.35) {
@@ -2045,9 +2289,15 @@ function fireEnemyWeapon(enemy) {
 }
 function updateEnemies(dt) {
   if (state !== 'playing') return;
+  let shouldRemoveCorpses = false;
   for (const e of enemies) {
     if (!e.alive) {
       e.deadTime += dt;
+      if (e.deadTime >= ENEMY_CORPSE_SECONDS) {
+        disposeEnemy(e);
+        shouldRemoveCorpses = true;
+        continue;
+      }
       const fall = Math.min(1, e.deadTime / .48);
       const eased = fall * fall * (3 - 2 * fall);
       e.group.rotation.x = e.deathStartX - 1.22 * eased;
@@ -2274,10 +2524,13 @@ function updateEnemies(dt) {
       e.group.position.y = Math.abs(Math.sin(elapsedMission * 7 + e.phase)) * .045;
     }
   }
+  // Excluir a referência somente após terminar a iteração atual.
+  if (shouldRemoveCorpses) enemies = enemies.filter(e => e.alive || e.deadTime < ENEMY_CORPSE_SECONDS);
 }
 
 function enemyBlocked(x, z, radius = .35) {
-  if (x < -17.5 || x > 17.5 || z < -95 || z > 33) return true;
+  if (x < -47.5 || x > 47.5 || z < -189.5 || z > 49.5) return true;
+  if (z < -173.5 && (!gateOpen || Math.abs(x) > 5.5)) return true;
   for (const c of colliders) if (!c.disabled && Math.hypot(x - c.x, z - c.z) < c.r + radius) return true;
   return false;
 }
@@ -2338,12 +2591,13 @@ function updateGame(dt) {
       sunLight.target.updateMatrixWorld(); shadowUpdateTime = .2;
     }
   }
-  updatePlayer(dt); updateEnemies(dt); updateEffects(dt); updateHUD();
+  updatePlayer(dt); updateEnemies(dt); updateEffects(dt);
+  hudUpdateTimer -= dt; if (hudUpdateTimer <= 0) { updateHUD(); hudUpdateTimer = .085; }
   environmentPulse += dt;
   for (const light of atmosphericLights) light.intensity = light.userData.baseIntensity * (.88 + Math.sin(environmentPulse * 8 + light.userData.phase) * .09 + Math.sin(environmentPulse * 17 + light.userData.phase) * .035);
   weatherClock += dt;
   if (weatherClock > .25) {
-    scene.fog.density += ((missionPhase === 1 || missionPhase === 4 ? .013 : .0105) - scene.fog.density) * .08;
+    scene.fog.density += ((missionPhase === 1 || missionPhase === 5 || missionPhase === 6 ? .0072 : .0058) - scene.fog.density) * .08;
     weatherClock = 0;
   }
   if (debugVisible) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#101311" />
-  <meta name="description" content="Operação Eclipse: A Guerra dos Esquecidos — Missão 01 com rigs esqueléticos, iluminação cinematográfica e áudio ambiental: FPS de guerra sobrenatural com combate tático para navegador." />
+  <meta name="description" content="Operação Eclipse: A Guerra dos Esquecidos — Missão 01 ampliada com rotas de flanqueamento, objetivos Janus, escolta, duas ondas de defesa e otimização gráfica para navegador." />
   <title>Operação Eclipse — A Guerra dos Esquecidos</title>
   <link rel="stylesheet" href="./src/style.css" />
   <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
@@ -41,7 +41,7 @@
           <button id="credits-btn" class="menu-button"><span>06</span> CRÉDITOS <small>INFORMAÇÕES DO PROJETO</small></button>
         </nav>
       </div>
-      <div class="menu-footer"><span>MISSÃO 01 · BUILD 0.7.0</span><span>© OPERAÇÃO ECLIPSE · FICÇÃO ALTERNATIVA</span></div>
+      <div class="menu-footer"><span>MISSÃO 01 · BUILD 0.8.0</span><span>© OPERAÇÃO ECLIPSE · FICÇÃO ALTERNATIVA</span></div>
     </section>
 
     <section id="mission-briefing" class="screen modal-screen">
@@ -49,14 +49,14 @@
         <div class="eyebrow"><i></i> ORDEM DE OPERAÇÃO · 01 / 12</div>
         <div class="briefing-kicker">NOVEMBRO DE 1944 · APENINOS, ITÁLIA</div>
         <h2>CINZAS NA<br><em>ESTRADA</em></h2>
-        <p class="briefing-lead">Um comboio aliado deixou de responder. A última transmissão indica um sobrevivente próximo à estrada. Localize o operador de rádio e alcance o posto avançado.</p>
+        <p class="briefing-lead">Um comboio aliado foi destruído no vale. Dois repetidores Janus bloqueiam as comunicações. Desative os equipamentos, resgate o operador e defenda o posto até conseguir transmitir o alerta.</p>
         <div class="briefing-grid">
-          <div><label>OBJETIVO PRINCIPAL</label><strong>Resgatar o operador de rádio</strong></div>
-          <div><label>EXTRAÇÃO</label><strong>Posto avançado Nébula</strong></div>
-          <div><label>ARMAMENTO</label><strong>Fuzil 8/40 · Pistola 12/36</strong></div>
-          <div><label>AMEAÇA ESTIMADA</label><strong class="warning-text">Desconhecida</strong></div>
+          <div><label>OBJETIVO PRINCIPAL</label><strong>Desativar 2 repetidores e resgatar o operador</strong></div>
+          <div><label>SETOR DE OPERAÇÃO</label><strong>Vale, fazenda e posto avançado</strong></div>
+          <div><label>ARMAMENTO</label><strong>Fuzil 8/40 · Pistola 12/36 · 2 granadas</strong></div>
+          <div><label>AMEAÇA ESTIMADA</label><strong class="warning-text">Infantaria corrompida e criaturas</strong></div>
         </div>
-        <div class="briefing-note"><span class="note-mark">!</span><span>O sinal de rádio apresenta interferência. Não responda a vozes que não reconheça.</span></div>
+        <div class="briefing-note"><span class="note-mark">!</span><span>Há duas rotas laterais para flanquear as posições inimigas. Use cobertura, gerencie munição e não abandone o operador durante a escolta.</span></div>
         <div class="briefing-actions"><button id="briefing-back" class="text-button">VOLTAR</button><button id="start-mission-btn" class="action-button">INICIAR MISSÃO <b>→</b></button></div>
       </div>
     </section>
@@ -112,7 +112,7 @@
     <section id="hud" class="hud hidden" aria-live="off">
       <div class="hud-top">
         <div class="mission-label"><span class="hud-kicker">OPERAÇÃO 01</span><strong>CINZAS NA ESTRADA</strong></div>
-        <div class="objective-box"><span>OBJETIVO ATUAL</span><strong id="objective-text">AVANCE ATÉ O COMBOIO DESTRUÍDO</strong></div>
+        <div class="objective-box"><div class="objective-meta"><span>OBJETIVO ATUAL</span><b id="objective-step">ETAPA 01 / 09</b></div><strong id="objective-text">AVANCE ATÉ O COMBOIO DESTRUÍDO</strong><div class="objective-progress"><i id="objective-progress-fill"></i></div></div>
         <div class="compass-box"><span>N</span><div class="compass-line"></div><b id="compass-value">N</b></div>
       </div>
       <div class="hud-bottom">
@@ -124,8 +124,8 @@
       <div id="noise-status" class="noise-status" data-level="mínimo"><span>ASSINATURA SONORA</span><b id="noise-value">MÍNIMO</b><i><em></em><em></em><em></em></i></div>
       <div id="tactical-map" class="tactical-map hidden">
         <div class="map-heading">MAPA TÁTICO · MISSÃO 01</div>
-        <div class="map-route"><div class="map-road"></div><span class="map-point map-start">INÍCIO</span><span class="map-point map-convoy">COMBOIO</span><span class="map-point map-radio">OPERADOR</span><span class="map-point map-exit">POSTO</span><i id="map-player" class="map-player"></i></div>
-        <p>Estrada dos Apeninos · rota aproximada</p>
+        <div class="map-route"><div class="map-road"></div><span class="map-point map-start">INÍCIO</span><span class="map-point map-convoy">COMBOIO</span><span class="map-point map-relay-a">REPETIDOR A</span><span class="map-point map-relay-b">REPETIDOR B</span><span class="map-point map-radio">FAZENDA</span><span class="map-point map-exit">POSTO</span><i id="map-player" class="map-player"></i></div>
+        <p>Vale dos Apeninos · mapa esquemático</p>
       </div>
       <div class="objective-direction" aria-hidden="true"><span id="objective-arrow">▲</span><small>OBJETIVO</small></div>
       <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
@@ -139,7 +139,7 @@
     </section>
 
     <div id="pointer-hint" class="pointer-hint hidden">CLIQUE PARA RETOMAR O CONTROLE DO MOUSE</div>
-    <div id="loading-screen" class="loading-screen"><div class="loading-mark">E</div><div class="loading-title">PREPARANDO OPERAÇÃO</div><div class="loading-track"><i id="loading-fill"></i></div><small id="loading-status">INICIALIZANDO AMBIENTE 3D E SISTEMAS DE ANIMAÇÃO</small></div>
+    <div id="loading-screen" class="loading-screen"><div class="loading-mark">E</div><div class="loading-title">PREPARANDO OPERAÇÃO</div><div class="loading-track"><i id="loading-fill"></i></div><small id="loading-status">CARREGANDO SETORES, ROTAS TÁTICAS E SISTEMAS DE COMBATE</small></div>
   </div>
   <script>
     window.addEventListener('error', (event) => {
