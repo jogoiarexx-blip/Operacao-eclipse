@@ -1,20 +1,43 @@
 # Histórico de versões
 
-## 0.2.0 — Missão 01 concluída em protótipo / GitHub Pages
+## 0.5.0 — IA tática, navegação e leitura de combate (18/11/2026)
 
-- Adicionada escolta do operador de rádio, defesa do posto e abertura animada do portão.
-- Adicionado Rastejador, além dos Errantes; 6 inimigos no total em dois encontros.
-- Adicionado documento Janus opcional, mais suprimentos e estatísticas de tempo/coletáveis.
-- Implementados ataques com preparação, desvio local de obstáculos e ajuste de spawns.
-- Implementado LOD 3D próximo ↔ impostor 2D distante com histerese.
-- Corrigida a renderização do fuzil em primeira pessoa ao adicionar a câmera à cena.
-- Tiros agora consideram obstáculos sólidos no raycast.
-- Checkpoints agora salvam itens, vida, munição, fase, estatísticas e documento.
-- Adicionado fôlego de corrida, sons de passos, mapa tático e indicadores de objetivo.
-- Adicionadas opções de inversão vertical e redução de movimento.
-- Adicionada seleção de capítulo para replay após a conclusão da Missão 01.
-- Adicionados workflow de GitHub Pages, documentação e smoke test de fluxo.
+- Navegação A* em grade estática para Errantes, Rastejador e operador de rádio, com rotas suavizadas e atualização em baixa frequência.
+- Percepção por visão e ruído: tiros, passos, corrida e agachamento geram assinaturas sonoras diferentes.
+- Agachar reduz o alcance de detecção visual e sonora; inimigos investigam a última posição conhecida em vez de seguir a posição do jogador através de paredes.
+- Rastejador ganhou investida curta telegrafada, com janela para esquiva.
+- Morte dos inimigos agora tem animação de queda em vez de tombar instantaneamente.
+- Mira dinâmica abre com disparos e movimento e fecha ao estabilizar ou mirar.
+- Indicador de assinatura sonora no HUD para ensinar furtividade sem tutorial invasivo.
+- Testes ampliados para navegação, linha de rota e persistência da missão.
+
+## 0.4.0 — Arsenal secundário, atmosfera e otimização (18/11/2026)
+
+- Pistola de serviço procedural, tiro e recarga próprios; troca com 1/2/roda do mouse.
+- Munições separadas, HUD adaptativo e save v3 com migração de campos v1/v2.
+- Dispersão de tiro diferenciada para ADS e movimento; sensibilidade reduzida ao mirar.
+- Chuva procedural por preset, neblina dinâmica e interferência Janus contextual.
+- Detalhes adicionais de caminhões e cenário; props agrupados em `InstancedMesh`.
+- Cápsulas ejetadas e marcas de impacto temporárias com limpeza automática.
+- Alerta de ataque, indicador de direção de dano e teste de linha de visão no golpe inimigo.
+- Overlay de diagnóstico de desempenho com F3.
+
+## 0.3.0 — Gráficos e gameplay (18/11/2026)
+
+- Céu procedural com shader, texturas de terra e estrada geradas no navegador.
+- Crateras, poças, marcas de pneus, cercas, placa de posto e anomalias Janus.
+- Vegetação/cascalho com `InstancedMesh` e densidade por preset gráfico.
+- Fuzil redesenhado com detalhes, recuo e animação de recarga.
+- Inimigos com movimentação animada, reação ao impacto e separação de grupo.
+- Granadas com física simples, explosão, partículas e dano em área com cobertura.
+- Golpe corpo a corpo, lanterna e novas indicações no HUD.
+- Movimento do jogador com aceleração e atrito.
+
+## 0.2.0 — Missão 01 completa em nível de protótipo
+
+- Segunda emboscada, escolta, defesa do posto, portão e extração.
+- Rastejador, checkpoint, mapa tático, documento Janus e estatísticas.
 
 ## 0.1.0 — Protótipo inicial
 
-- Menu principal, briefing, FPS básico, estrada procedural, primeira emboscada de 3 Errantes, resgate simples, HUD e salvamento local.
+- Menu, cenário 3D, FPS básico, tiro, IA inicial e primeiros objetivos.
