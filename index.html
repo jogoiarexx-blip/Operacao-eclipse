@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101311" />
+  <meta name="description" content="Operação Eclipse: A Guerra dos Esquecidos — protótipo jogável da missão 01." />
+  <title>Operação Eclipse — A Guerra dos Esquecidos</title>
+  <link rel="stylesheet" href="./src/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="game-root">
+    <canvas id="game-canvas" aria-label="Área de jogo 3D"></canvas>
+
+    <div id="film-grain" aria-hidden="true"></div>
+    <div id="vignette" aria-hidden="true"></div>
+
+    <section id="main-menu" class="screen active">
+      <div class="menu-topline"><span>ESQUADRÃO NÉBULA</span><span>TEATRO ITALIANO · 1944</span></div>
+      <div class="menu-content">
+        <div class="eyebrow"><i></i> UMA CAMPANHA DE GUERRA E HORROR</div>
+        <h1>OPERAÇÃO<br><em>ECLIPSE</em></h1>
+        <div class="game-subtitle">A GUERRA DOS ESQUECIDOS</div>
+        <div class="title-rule"><span></span></div>
+        <p class="menu-copy">Em 1944, o pior inimigo não está do outro lado da trincheira.</p>
+        <nav class="main-actions" aria-label="Menu principal">
+          <button id="continue-btn" class="menu-button primary" disabled><span>01</span> CONTINUAR <small>RETOMAR CAMPANHA</small></button>
+          <button id="new-game-btn" class="menu-button"><span>02</span> NOVA CAMPANHA <small>COMEÇAR DO INÍCIO</small></button>
+          <button id="chapters-btn" class="menu-button" disabled><span>03</span> SELEÇÃO DE CAPÍTULO <small>DISPONÍVEL APÓS DESBLOQUEIO</small></button>
+          <button id="arsenal-btn" class="menu-button"><span>04</span> ARSENAL / BESTIÁRIO <small>ARMAS E AMEAÇAS</small></button>
+          <button id="options-btn" class="menu-button"><span>05</span> OPÇÕES <small>VÍDEO, ÁUDIO E CONTROLES</small></button>
+          <button id="credits-btn" class="menu-button"><span>06</span> CRÉDITOS <small>INFORMAÇÕES DO PROJETO</small></button>
+        </nav>
+      </div>
+      <div class="menu-footer"><span>BUILD DE DESENVOLVIMENTO 0.1.0</span><span>© OPERAÇÃO ECLIPSE · FICÇÃO ALTERNATIVA</span></div>
+    </section>
+
+    <section id="mission-briefing" class="screen modal-screen">
+      <div class="briefing-panel">
+        <div class="eyebrow"><i></i> ORDEM DE OPERAÇÃO · 01 / 12</div>
+        <div class="briefing-kicker">NOVEMBRO DE 1944 · APENINOS, ITÁLIA</div>
+        <h2>CINZAS NA<br><em>ESTRADA</em></h2>
+        <p class="briefing-lead">Um comboio aliado deixou de responder. A última transmissão indica um sobrevivente próximo à estrada. Localize o operador de rádio e alcance o posto avançado.</p>
+        <div class="briefing-grid">
+          <div><label>OBJETIVO PRINCIPAL</label><strong>Resgatar o operador de rádio</strong></div>
+          <div><label>EXTRAÇÃO</label><strong>Posto avançado Nébula</strong></div>
+          <div><label>ARMAMENTO</label><strong>Fuzil semiautomático · 8 / 40</strong></div>
+          <div><label>AMEAÇA ESTIMADA</label><strong class="warning-text">Desconhecida</strong></div>
+        </div>
+        <div class="briefing-note"><span class="note-mark">!</span><span>O sinal de rádio apresenta interferência. Não responda a vozes que não reconheça.</span></div>
+        <div class="briefing-actions"><button id="briefing-back" class="text-button">VOLTAR</button><button id="start-mission-btn" class="action-button">INICIAR MISSÃO <b>→</b></button></div>
+      </div>
+    </section>
+
+    <section id="pause-screen" class="screen modal-screen">
+      <div class="pause-panel">
+        <div class="eyebrow"><i></i> OPERAÇÃO EM PAUSA</div>
+        <h2>PAUSA</h2>
+        <p class="muted">Cinzas na Estrada · Missão 01</p>
+        <button id="resume-btn" class="action-button full">RETOMAR MISSÃO</button>
+        <button id="restart-checkpoint-btn" class="sub-button">REINICIAR DO ÚLTIMO CHECKPOINT</button>
+        <button id="pause-objectives-btn" class="sub-button">VER OBJETIVOS E CONTROLES</button>
+        <button id="pause-options-btn" class="sub-button">OPÇÕES</button>
+        <button id="pause-menu-btn" class="sub-button danger">VOLTAR AO MENU PRINCIPAL</button>
+      </div>
+    </section>
+
+    <section id="death-screen" class="screen modal-screen">
+      <div class="pause-panel death-panel">
+        <div class="eyebrow danger-eyebrow"><i></i> SINAL PERDIDO</div>
+        <h2>VOCÊ CAIU</h2>
+        <p class="muted">O Esquadrão Nébula ainda não terminou esta operação.</p>
+        <button id="retry-btn" class="action-button full">REINICIAR CHECKPOINT</button>
+        <button id="death-menu-btn" class="sub-button">VOLTAR AO MENU</button>
+      </div>
+    </section>
+
+    <section id="complete-screen" class="screen modal-screen">
+      <div class="briefing-panel complete-panel">
+        <div class="eyebrow"><i></i> OPERAÇÃO CONCLUÍDA</div>
+        <h2>CINZAS NA<br><em>ESTRADA</em></h2>
+        <p class="briefing-lead">O operador foi resgatado e o posto avançado recebeu o alerta. Mas a origem do sinal continua desconhecida.</p>
+        <div class="results-grid">
+          <div><label>ERRANTES ELIMINADOS</label><strong id="result-kills">0</strong></div>
+          <div><label>PRECISÃO</label><strong id="result-accuracy">0%</strong></div>
+          <div><label>VIDA RESTANTE</label><strong id="result-health">100</strong></div>
+          <div><label>OPERADOR</label><strong>RESGATADO</strong></div>
+        </div>
+        <div class="briefing-note"><span class="note-mark">i</span><span>A próxima missão, “A Vila sem Sinos”, será disponibilizada em uma atualização futura.</span></div>
+        <div class="briefing-actions"><button id="complete-menu-btn" class="action-button">VOLTAR AO MENU <b>→</b></button></div>
+      </div>
+    </section>
+
+    <section id="info-modal" class="screen modal-screen">
+      <div class="info-panel">
+        <button id="close-info" class="close-button" aria-label="Fechar">×</button>
+        <div id="info-content"></div>
+      </div>
+    </section>
+
+    <section id="hud" class="hud hidden" aria-live="polite">
+      <div class="hud-top">
+        <div class="mission-label"><span class="hud-kicker">OPERAÇÃO 01</span><strong>CINZAS NA ESTRADA</strong></div>
+        <div class="objective-box"><span>OBJETIVO ATUAL</span><strong id="objective-text">AVANCE ATÉ O COMBOIO DESTRUÍDO</strong></div>
+        <div class="compass-box"><span>N</span><div class="compass-line"></div><b id="compass-value">N</b></div>
+      </div>
+      <div class="hud-bottom">
+        <div class="health-panel"><div class="hud-kicker">CONDIÇÃO</div><div class="health-row"><span class="health-cross">+</span><div class="health-track"><i id="health-fill"></i></div><strong id="health-value">100</strong></div></div>
+        <div class="ammo-panel"><div class="hud-kicker">FUZIL SEMIAUTOMÁTICO</div><div class="ammo-row"><strong id="ammo-current">08</strong><span>/</span><b id="ammo-reserve">40</b></div><div id="reload-label" class="reload-label"></div></div>
+      </div>
+      <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+      <div id="interact-prompt" class="interact-prompt hidden"><kbd>E</kbd><span>INTERAGIR</span></div>
+      <div id="tutorial-toast" class="tutorial-toast hidden"><span class="toast-symbol">!</span><div><b id="toast-title">INSTRUÇÃO</b><p id="toast-text"></p></div></div>
+      <div id="radio-subtitle" class="radio-subtitle hidden"><span>RÁDIO · ESQUADRÃO NÉBULA</span><p id="radio-text"></p></div>
+      <div id="hit-marker" class="hit-marker hidden">×</div>
+      <div id="damage-flash" class="damage-flash"></div>
+      <div id="pause-hint">ESC · PAUSAR</div>
+      <div id="fps-counter" class="fps-counter hidden">60 FPS</div>
+    </section>
+
+    <div id="pointer-hint" class="pointer-hint hidden">CLIQUE PARA RETOMAR O CONTROLE DO MOUSE</div>
+    <div id="loading-screen" class="loading-screen"><div class="loading-mark">E</div><div class="loading-title">PREPARANDO OPERAÇÃO</div><div class="loading-track"><i id="loading-fill"></i></div><small id="loading-status">INICIALIZANDO AMBIENTE 3D</small></div>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
