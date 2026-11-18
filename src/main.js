@@ -1307,7 +1307,7 @@ function resetMission() {
   kills = 0; shotsFired = 0; shotsHit = 0; elapsedMission = 0;
   noiseEvent = null; noiseEvents = []; noiseBurstTime = 0; loudNoiseUntil = 0; noiseSequence = 0; crosshairSpread = 5;
   if (escortGroup?.userData.navigation) escortGroup.userData.navigation = { path: null, pathIndex: 0, pathTimer: 0, pathGoal: -1 };
-  health = 100; ammo = 8; reserveAmmo = 40; pistolAmmo = 12; pistolReserve = 36; currentWeapon = 'rifle'; grenades = 2; stamina = 100; intelFound = false; grenadeCooldown = 0; meleeCooldown = 0; reloadProgress = 0; cameraShake = 0;
+  health = 100; ammo = 8; reserveAmmo = 40; pistolAmmo = 12; pistolReserve = 36; currentWeapon = 'rifle'; grenades = 2; stamina = 100; intelFound = false; grenadeCooldown = 0; meleeCooldown = 0; cameraShake = 0;
   missionPhase = 0; operatorRescued = false; ambushTriggered = false; missionComplete = false;
   finalSpawnTimer = -1; finalWaveSpawned = false; gateOpening = false; gateOpen = false;
   isReloading = false; reloadTime = 0; fireCooldown = 0; aiming = false; muzzleTime = 0;
