@@ -1,82 +1,104 @@
-# OPERAÇÃO ECLIPSE — protótipo jogável 0.1.0
+# OPERAÇÃO ECLIPSE — A Guerra dos Esquecidos
 
-Protótipo de menu principal e Missão 01 — **Cinzas na Estrada**, baseado no GDD `OPERAÇÃO ECLIPSE: A GUERRA DOS ESQUECIDOS`.
+**Versão 0.2.0 · Missão 01 concluída em nível de protótipo jogável · GitHub Pages**
 
-## O que já está implementado
+FPS em primeira pessoa no navegador, ambientado em uma história alternativa de guerra sobrenatural em 1944. O projeto segue o GDD original incluído em `GDD_REFERENCIA.md`.
 
-- Menu principal com Continuar, Nova campanha, Seleção de capítulo bloqueada, Arsenal/Bestiário, Opções e Créditos.
-- Briefing da missão com contexto, objetivo e armamento inicial.
-- Cenário 3D procedural: estrada italiana, colinas, árvores, pedras, postes, comboio destruído, abrigo, casa em ruínas e posto avançado.
-- FPS com Pointer Lock, movimentação, corrida, agachamento, pulo, mira, tiro, recarga e colisões simplificadas.
-- Fuzil semiautomático com carregador de 8 cartuchos e reserva inicial de 40.
-- Três Errantes com perseguição e ataque corpo a corpo; dificuldade altera vida, velocidade e dano.
-- Resgate do operador de rádio, kits médicos, munição, abertura do portão e conclusão da missão.
-- HUD, tutorial contextual, mensagens de rádio, pausa, morte, checkpoint e salvamento local.
-- Opções de volume, sensibilidade, FOV, qualidade, dificuldade e exibição de FPS.
-- Áudio básico sintetizado via Web Audio API; não há arquivos de áudio externos.
+## Jogar
 
-## Como executar
+A Missão 01, **Cinzas na Estrada**, está implementada de ponta a ponta:
 
-A versão usa Three.js por CDN. É necessário internet na primeira abertura para carregar a biblioteca e as fontes externas. Os arquivos do jogo ficam locais.
+1. **Aproximação** — siga pela estrada, aprenda os comandos e investigue o comboio destruído.
+2. **Primeira emboscada** — elimine três Errantes; use os veículos como cobertura e recolha munição.
+3. **Resgate** — encontre o operador de rádio junto ao abrigo e interaja com `E`.
+4. **Escolta** — conduza o operador até o posto avançado; ele segue o jogador.
+5. **Defesa final** — enfrente mais dois Errantes e um Rastejador, com aviso antes do ataque.
+6. **Extração** — espere a abertura do portão e entre no posto para concluir a missão.
 
-**Opção 1 — VS Code**
-1. Extraia o ZIP.
-2. Abra a pasta `operacao-eclipse` no VS Code.
-3. Instale a extensão Live Server.
-4. Clique com o botão direito em `index.html` e escolha **Open with Live Server**.
+Há um **documento Janus opcional** na estrada lateral, kits médicos, caixas de munição, checkpoints após os encontros principais, estatísticas de conclusão e desbloqueio de replay do capítulo 01.
 
-**Opção 2 — Python**
-1. Abra o terminal dentro da pasta.
-2. Execute `python -m http.server 8000`.
-3. Acesse `http://localhost:8000` no navegador.
+## Recursos implementados
 
-Não abra o arquivo por `file://`: módulos ES e Pointer Lock precisam de um servidor local.
+- Menu principal, briefing, pausa, morte, vitória, créditos e configurações.
+- Cenário procedural 3D: estrada, árvores, colinas, ruínas, comboio, barracas, barricadas e posto avançado.
+- FPS: WASD, câmera com Pointer Lock, corrida com fôlego, agachamento, salto, ADS, tiro, recarga e dano.
+- Um fuzil semiautomático, tiros hitscan com bloqueio por paredes/veículos, munição e feedback de impacto.
+- Dois tipos de criaturas: Errante e Rastejador; ataques com preparação visível e recuperação.
+- Troca automática entre modelos 3D próximos e impostores 2D distantes, com histerese de distância.
+- Operador de rádio que acompanha o jogador após o resgate.
+- Checkpoints com inventário, estatísticas e progresso, armazenados no navegador.
+- Mapa tático com `Tab`, objetivo com distância, bússola, HUD de vida, fôlego e munição.
+- Perfis de qualidade, sensibilidade, FOV, inversão do mouse e redução de balanço da câmera.
+- Sons temporários sintetizados com Web Audio, mensagens de rádio em texto e efeitos de fumaça.
+- **Sem build, sem banco de dados e sem backend.**
 
 ## Controles
 
-| Tecla / ação | Função |
+| Entrada | Ação |
 |---|---|
-| W A S D | Mover |
+| `W A S D` | Mover |
 | Mouse | Olhar |
-| Clique esquerdo | Disparar |
-| Clique direito | Mirar |
-| Shift | Correr |
-| Ctrl | Agachar |
-| Espaço | Pular |
-| E | Interagir / recolher |
-| R | Recarregar |
-| Esc | Pausar / liberar mouse |
+| Botão esquerdo | Disparar |
+| Botão direito | Mirar (ADS) |
+| `Shift` | Correr (consome fôlego) |
+| `Ctrl` | Agachar |
+| `Espaço` | Pular |
+| `E` | Interagir / coletar |
+| `R` | Recarregar |
+| `Tab` (segurar) | Mapa tático |
+| `Esc` | Pausa / libera o mouse |
 
-## Fluxo da Missão 01
+## Executar localmente
 
-1. Avance pela estrada até o comboio destruído.
-2. A emboscada dos Errantes é ativada ao entrar na área.
-3. Elimine os três Errantes.
-4. Localize e resgate o operador de rádio junto ao abrigo.
-5. O portão do posto avançado abre; alcance a saída para concluir a missão.
+Use um servidor HTTP simples; **não abra por `file://`**.
+
+```bash
+python -m http.server 8000
+```
+
+Acesse `http://localhost:8000`. Alternativamente, abra `index.html` com a extensão **Live Server** do VS Code.
+
+O projeto usa Three.js **0.169.0** via import map e CDN (`cdn.jsdelivr.net`). É necessária conexão com a internet para obter a biblioteca. A fonte do Google Fonts é opcional e tem fallback local.
 
 ## Publicar no GitHub Pages
 
-1. Crie um repositório e envie o conteúdo desta pasta para a raiz dele.
-2. Em **Settings → Pages**, selecione a branch principal e a pasta `/ (root)`.
-3. Salve e aguarde a publicação.
+Veja [PUBLICAR_NO_GITHUB.md](PUBLICAR_NO_GITHUB.md). O pacote já inclui `.github/workflows/deploy.yml` para publicação automática em pushes na branch `main` e `.nojekyll`.
 
-O projeto usa caminhos relativos e não exige etapa de build.
+**Importante:** extraia o ZIP e envie **os arquivos da raiz** (incluindo a pasta `.github`) ao repositório. Não envie apenas o ZIP nem coloque a pasta inteira dentro de outra pasta.
 
-## Limitações conhecidas desta build
+## Estrutura
 
-- Os modelos são geometria procedural low-poly; não são os modelos finais do GDD.
-- Animações e sons são provisórios/sintetizados.
-- O combate é um protótipo de uma única missão; a campanha de 12 fases ainda não está implementada.
-- O menu mantém Seleção de capítulo bloqueada até haver mais missões concluídas.
-- A dificuldade é aplicada aos inimigos quando eles são criados; para testar outra dificuldade, reinicie a missão.
-- O salvamento é local ao navegador/dispositivo, não sincronizado entre computadores.
-- A biblioteca Three.js é carregada de CDN; para funcionamento totalmente offline, será necessário incluir uma cópia local da dependência.
+```text
+index.html                     entrada do jogo
+src/main.js                    gameplay, IA, mundo, estados e save
+src/style.css                  menu, HUD e apresentação
+.github/workflows/deploy.yml   GitHub Pages automático
+.nojekyll                      desativa processamento Jekyll
+GDD_REFERENCIA.md             especificação original
+DOCUMENTACAO_MISSAO_01.md     fluxo completo da missão e testes
+PUBLICAR_NO_GITHUB.md         instruções de publicação
+CHANGELOG.md                  alterações por versão
+tests/smoke.cjs                teste de fluxo sem dependências
+docs/PLANO_ORIGINAL_0.1.0.md  documento histórico da versão anterior
+```
 
-## Próximos marcos recomendados
+## Testes
 
-1. Corrigir e validar colisões e navegação com testes de gameplay em diferentes resoluções.
-2. Substituir geometria temporária por modelos GLB e animações definitivas.
-3. Implementar transição de LOD 3D para impostores 2D com histerese.
-4. Criar áudio ambiente, passos por material e falas temporárias.
-5. Implementar a Missão 02 e o fluxo de campanha persistente.
+```bash
+node --check src/main.js
+node tests/smoke.cjs
+```
+
+O teste de fluxo usa uma simulação simplificada do Three.js e DOM para verificar estados, salvamento e progressão. **Não substitui testar o jogo no navegador com WebGL.**
+
+## Limitações conhecidas
+
+- Os modelos 3D, animações e sons ainda são **provisórios**, não arte final.
+- O acompanhante usa navegação local simples e pode precisar de refinamento em obstáculos complexos.
+- O impostor 2D distante é um desenho procedural genérico; ainda não há atlas direcional de 4/8 ângulos.
+- A Missão 02 e os demais capítulos ainda não estão implementados.
+- O save fica no `localStorage` do navegador e não sincroniza entre dispositivos.
+- Three.js é carregado de CDN: esta versão **não é totalmente offline**.
+- É necessário testar em Chrome/Edge/Firefox e em GPUs reais antes de chamar a build de produção final.
+
+A campanha, o Projeto Janus e os personagens são ficção alternativa. Este repositório não pretende representar operações militares históricas reais.

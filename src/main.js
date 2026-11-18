@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-// OPERAÇÃO ECLIPSE — protótipo jogável da Missão 01.
+// OPERAÇÃO ECLIPSE — Missão 01 completa, build 0.2.0 para GitHub Pages.
 // A simulação (vida, inimigos, objetivos e checkpoints) é independente da apresentação 3D.
 
 const $ = (id) => document.getElementById(id);
@@ -17,10 +17,13 @@ const ui = {
 };
 
 const SAVE_KEY = 'operacao-eclipse-save-v1';
+const COMPLETION_KEY = 'operacao-eclipse-completion-v1';
+const TOTAL_ENEMIES = 6;
 const SETTINGS_KEY = 'operacao-eclipse-settings-v1';
-const defaults = { volume: 55, sensitivity: 1, difficulty: 'soldado', quality: 'equilibrado', fov: 78, showFPS: false };
+const defaults = { volume: 55, sensitivity: 1, difficulty: 'soldado', quality: 'equilibrado', fov: 78, showFPS: false, invertY: false, reduceMotion: false };
 let settings = { ...defaults, ...readJSON(SETTINGS_KEY, {}) };
 let savedGame = readJSON(SAVE_KEY, null);
+let completedMission = readJSON(COMPLETION_KEY, null);
 let state = 'menu';
 let pendingContinue = false;
 let pointerLocked = false;
@@ -52,8 +55,22 @@ let missionPhase = 0;
 let operatorRescued = false;
 let ambushTriggered = false;
 let missionComplete = false;
+let intelFound = false;
+let stamina = 100;
+let finalSpawnTimer = -1;
+let finalWaveSpawned = false;
+let gateOpening = false;
+let gateOpen = false;
+let muzzleTime = 0;
+let saveIndicatorTime = 0;
+let stepsTimer = 0;
+let worldObstacles = [];
+let escortGroup = null;
+let operatorCollider = null;
+let impostorTexture = null;
+let ambientAudio = null;
 let activeInteractable = null;
-let checkpoint = { x: 0, z: 28, health: 100, ammo: 8, reserve: 40, phase: 0, operatorRescued: false };
+let checkpoint = null;
 let enemies = [];
 let pickups = [];
 let colliders = [];
@@ -67,6 +84,7 @@ scene.background = new THREE.Color(0x9a9b8e);
 scene.fog = new THREE.FogExp2(0x85877d, 0.0095);
 const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.08, 180);
 camera.rotation.order = 'YXZ';
+scene.add(camera); // Necessário para desenhar a arma, filha da câmera.
 camera.position.set(15, 10, 22);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== 'baixo', powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, settings.quality === 'baixo' ? 1 : 1.5));
@@ -102,19 +120,29 @@ function showScreen(screen) {
   if (screen) screen.classList.add('active');
 }
 function updateContinueButton() {
-  const canContinue = !!savedGame && savedGame.version === 1 && savedGame.mission === '01';
+  const canContinue = !!savedGame && [1, 2].includes(savedGame.version) && savedGame.mission === '01' && !!savedGame.checkpoint;
   $('continue-btn').disabled = !canContinue;
   $('continue-btn').classList.toggle('primary', canContinue);
   $('new-game-btn').classList.toggle('primary', !canContinue);
+  $('chapters-btn').disabled = !completedMission;
+  $('chapters-btn').querySelector('small').textContent = completedMission ? 'REJOGAR MISSÃO 01' : 'DISPONÍVEL APÓS DESBLOQUEIO';
 }
 function saveSettings() { writeJSON(SETTINGS_KEY, settings); }
 function saveGame() {
-  savedGame = {
-    version: 1, mission: '01', checkpoint: { ...checkpoint }, kills, shotsFired, shotsHit,
-    elapsedMission, difficulty: settings.difficulty, operatorRescued, ambushTriggered, missionPhase
-  };
+  if (!checkpoint) return;
+  savedGame = { version: 2, mission: '01', checkpoint: { ...checkpoint }, difficulty: settings.difficulty };
   writeJSON(SAVE_KEY, savedGame);
   updateContinueButton();
+  saveIndicatorTime = 2.2;
+  $('save-indicator').classList.remove('hidden');
+}
+function captureCheckpoint(phase = missionPhase) {
+  checkpoint = {
+    x: player.position.x, z: player.position.z, phase, health: Math.max(1, health),
+    ammo, reserve: reserveAmmo, operatorRescued, intelFound, stamina,
+    pickups: pickups.map(p => p.used), kills, shotsFired, shotsHit, elapsedMission
+  };
+  saveGame();
 }
 function clearSave() { savedGame = null; try { localStorage.removeItem(SAVE_KEY); } catch {} updateContinueButton(); }
 
@@ -147,6 +175,23 @@ function playBeep(freq = 520, duration = .12) {
   osc.connect(gain); gain.connect(audioContext.destination); osc.start(); gain.gain.exponentialRampToValueAtTime(.001, audioContext.currentTime + duration); osc.stop(audioContext.currentTime + duration);
 }
 
+function playStepSound() {
+  if (!audioContext || settings.volume <= 0) return;
+  const now = audioContext.currentTime;
+  const osc = audioContext.createOscillator(); const gain = audioContext.createGain();
+  osc.type = 'triangle'; osc.frequency.setValueAtTime(105, now); osc.frequency.exponentialRampToValueAtTime(42, now + .09);
+  gain.gain.setValueAtTime(settings.volume / 100 * .027, now); gain.gain.exponentialRampToValueAtTime(.0001, now + .095);
+  osc.connect(gain); gain.connect(audioContext.destination); osc.start(now); osc.stop(now + .1);
+}
+function playThreatSound() {
+  if (!audioContext || settings.volume <= 0) return;
+  const now = audioContext.currentTime;
+  const osc = audioContext.createOscillator(); const gain = audioContext.createGain();
+  osc.type = 'sawtooth'; osc.frequency.setValueAtTime(65, now); osc.frequency.exponentialRampToValueAtTime(115, now + .65);
+  gain.gain.setValueAtTime(.0001, now); gain.gain.linearRampToValueAtTime(settings.volume / 100 * .055, now + .2);
+  gain.gain.exponentialRampToValueAtTime(.0001, now + .7);
+  osc.connect(gain); gain.connect(audioContext.destination); osc.start(now); osc.stop(now + .72);
+}
 // ---------- Construção do cenário. ----------
 const mats = {};
 function mat(name, color, roughness = 0.9, metalness = 0) {
@@ -162,7 +207,9 @@ function addBox(parent, x, y, z, sx, sy, sz, material, rotY = 0) {
 function addCylinder(parent, x, y, z, rt, rb, h, material, segments = 8, rotX = 0, rotZ = 0) {
   const mesh = addMesh(new THREE.CylinderGeometry(rt, rb, h, segments), material, parent, x, y, z); mesh.rotation.x = rotX; mesh.rotation.z = rotZ; return mesh;
 }
-function addCollider(x, z, r) { colliders.push({ x, z, r }); }
+function addCollider(x, z, r) { const collider = { x, z, r, disabled: false }; colliders.push(collider); return collider; }
+function registerCover(group) { group.traverse(obj => { if (obj.isMesh && !obj.material?.transparent) worldObstacles.push(obj); }); }
+
 function addGroundPatch(x, z, sx, sz, color, opacity = 1) {
   const m = new THREE.MeshStandardMaterial({ color, roughness: 1, transparent: opacity < 1, opacity });
   const p = addMesh(new THREE.CircleGeometry(1, 12), m, scene, x, .035, z); p.rotation.x = -Math.PI / 2; p.scale.set(sx, sz, 1); return p;
@@ -206,6 +253,7 @@ function makeTruck(x, z, rotation = 0, destroyed = true) {
     const ember = addMesh(new THREE.SphereGeometry(.6, 7, 6), fireMat, g, .8, 1.05, -1.2); ember.scale.set(1.2, .45, 1.3);
   }
   addCollider(x, z, 3.35);
+  registerCover(g);
   return g;
 }
 function makeSandbagLine(x, z, count = 5, rot = 0) {
@@ -215,6 +263,7 @@ function makeSandbagLine(x, z, count = 5, rot = 0) {
     bag.rotation.y = (i % 2) * .07; bag.rotation.z = (i % 2 ? .025 : -.025);
   }
   addCollider(x, z, count * .46 + .5);
+  registerCover(g);
 }
 function makeTelegraphPole(x, z) {
   const g = new THREE.Group(); g.position.set(x, 0, z); scene.add(g);
@@ -232,6 +281,7 @@ function makeRuinedHouse(x, z) {
   addBox(g, 2.5, 2.4, -1.3, 2.5, .3, 3.1, dark, .3);
   addBox(g, 0, .35, 5.1, 5, .7, .4, dark);
   addCollider(x, z + 2, 4.6);
+  registerCover(g);
 }
 function makeOutpost() {
   const g = new THREE.Group(); g.position.set(0, 0, -96); scene.add(g);
@@ -239,7 +289,8 @@ function makeOutpost() {
   addBox(g, -7, 2.2, 0, 1.3, 4.4, 1.2, concrete);
   addBox(g, 7, 2.2, 0, 1.3, 4.4, 1.2, concrete);
   addBox(g, 0, 4.25, 0, 14.7, .55, 1.2, concrete);
-  addBox(g, 0, 1.5, -.2, 12.5, 2.8, .25, olive);
+  addBox(g, -6.25, 1.5, -.2, .9, 2.8, .25, olive);
+  addBox(g, 6.25, 1.5, -.2, .9, 2.8, .25, olive);
   const gate = new THREE.Group(); gate.position.set(0, 1.35, -.1); g.add(gate);
   for (let i = -5; i <= 5; i++) addBox(gate, i * 1.05, 0, 0, .12, 2.7, .22, mat('gateMetal', 0x252a26, .6, .35));
   addBox(gate, 0, 1.3, 0, 11.1, .15, .25, mat('gateMetal', 0x252a26, .6, .35));
@@ -247,6 +298,7 @@ function makeOutpost() {
   addBox(g, 0, 2.3, -8, 11, 4.6, 1, concrete);
   addBox(g, 0, 4.7, -8, 11.5, .4, 1.4, olive);
   addCollider(-7, -96, 1.2); addCollider(7, -96, 1.2);
+  registerCover(g);
 }
 let outpostGate = null;
 function createSmoke(x, y, z) {
@@ -302,9 +354,9 @@ function buildWorld() {
   makeTruck(-2.8, -21, -.22, true);
   makeTruck(4.1, -32, .28, true);
   makeSandbagLine(-7.4, -17, 5, .1); makeSandbagLine(8, -38, 4, -.2);
-  addBox(scene, -7.4, .55, -28, 1.1, 1.1, 1.1, mat('crate', 0x5a4c38), .2); addCollider(-7.4, -28, .9);
-  addBox(scene, 7.5, .55, -24, 1.2, 1.1, 1.1, mat('crate', 0x554a39), -.3); addCollider(7.5, -24, .9);
-  addBox(scene, 8.1, .45, -43, 1.4, .9, 1.2, mat('crate', 0x4e4839), .4); addCollider(8.1, -43, 1);
+  worldObstacles.push(addBox(scene, -7.4, .55, -28, 1.1, 1.1, 1.1, mat('crate', 0x5a4c38), .2)); addCollider(-7.4, -28, .9);
+  worldObstacles.push(addBox(scene, 7.5, .55, -24, 1.2, 1.1, 1.1, mat('crate', 0x554a39), -.3)); addCollider(7.5, -24, .9);
+  worldObstacles.push(addBox(scene, 8.1, .45, -43, 1.4, .9, 1.2, mat('crate', 0x4e4839), .4)); addCollider(8.1, -43, 1);
   makeRuinedHouse(-15, -55);
   // Abrigo de campanha junto ao operador.
   addBox(scene, 7.2, 1.45, -49, 4.8, .18, 4.5, mat('canvas', 0x494d40));
@@ -314,16 +366,58 @@ function buildWorld() {
   // Suprimentos posicionados antes da emboscada.
   createPickup('medkit', -7.8, -13.5, 'KIT MÉDICO');
   createPickup('ammo', 8.3, -28.8, 'MUNIÇÃO');
+  createPickup('intel', -9.3, -61, 'DOCUMENTO JANUS');
+  createPickup('ammo', -6.7, -70.5, 'MUNIÇÃO');
+  createPickup('medkit', 7.5, -77, 'KIT MÉDICO');
   createRadioOperator();
+  createEscortOperator();
+  decorateFinalApproach();
   createSmoke(-2, 3.2, -22); createSmoke(4, 3.8, -32); createDust();
 }
 
+function decorateFinalApproach() {
+  // Trilho de abastecimento, guaritas, iluminação e antenas de campo.
+  for (const z of [-64, -71, -78, -86]) {
+    addGroundPatch(-3.4, z, .75, 1.3, 0x31392f, .85);
+    addGroundPatch(2.7, z + 1.3, .6, 1.1, 0x38392f, .85);
+  }
+  for (const x of [-5.8, 5.8]) {
+    const g = new THREE.Group(); g.position.set(x, 0, -91); scene.add(g);
+    addCylinder(g, 0, 2.1, 0, .1, .15, 4.2, mat('pole', 0x39372d), 7);
+    addMesh(new THREE.ConeGeometry(.45, .45, 7), mat('gateMetal', 0x252a26), g, 0, 4.1, 0);
+    const lamp = addMesh(new THREE.SphereGeometry(.2, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffb96b }), g, 0, 3.8, 0);
+    lamp.userData.glow = true;
+  }
+  makeSandbagLine(-8.3, -86, 4, .25);
+  makeSandbagLine(8.3, -87, 4, -.2);
+  const mast = new THREE.Group(); mast.position.set(-12.5, 0, -91); scene.add(mast);
+  addCylinder(mast, 0, 5.3, 0, .08, .15, 10.6, mat('gateMetal', 0x252a26), 6);
+  addCylinder(mast, 0, 8.4, 0, 1.15, 1.15, .07, mat('radioDial', 0x9c8b63), 10, 0, Math.PI / 2);
+  createSmoke(-11, 1.4, -88);
+}
+function createEscortOperator() {
+  escortGroup = new THREE.Group(); escortGroup.visible = false; scene.add(escortGroup);
+  const cloth = mat('operatorUniform', 0x4b5145), skin = mat('operatorSkin', 0x9a8269);
+  addMesh(new THREE.CapsuleGeometry(.3, .72, 4, 7), cloth, escortGroup, 0, 1.17, 0);
+  addMesh(new THREE.SphereGeometry(.22, 8, 6), skin, escortGroup, 0, 1.94, 0);
+  addBox(escortGroup, 0, 2.13, 0, .51, .17, .5, mat('helmet', 0x555c4a));
+  for (const side of [-1, 1]) {
+    addCylinder(escortGroup, side * .19, .46, 0, .13, .13, .82, cloth, 7);
+    addCylinder(escortGroup, side * .43, 1.25, 0, .105, .1, .72, cloth, 7, 0, side * .18);
+  }
+  addBox(escortGroup, 0, 1.15, .31, .6, .58, .24, mat('radioBody', 0x303631));
+  escortGroup.userData.walkTime = 0;
+}
 function createPickup(type, x, z, label) {
   const g = new THREE.Group(); g.position.set(x, .5, z); scene.add(g);
   if (type === 'medkit') {
     addBox(g, 0, 0, 0, .75, .45, .55, mat('medkitWhite', 0xc9c5b1));
     addBox(g, 0, .235, 0, .16, .025, .58, mat('medkitRed', 0x8f4034));
     addBox(g, 0, .235, 0, .58, .025, .16, mat('medkitRed', 0x8f4034));
+  } else if (type === 'intel') {
+    addBox(g, 0, 0, 0, .52, .05, .68, mat('paper', 0xb4a17a), .3);
+    addBox(g, 0, .045, -.1, .3, .02, .035, mat('radioBody', 0x303631));
+    addBox(g, 0, .045, .03, .3, .02, .035, mat('radioBody', 0x303631));
   } else {
     addBox(g, 0, 0, 0, .8, .6, .6, mat('ammoBox', 0x4b513d));
     addBox(g, 0, .32, 0, .82, .08, .62, mat('ammoMetal', 0x282d27, .6, .2));
@@ -353,7 +447,7 @@ function createRadioOperator() {
   const ring = addMesh(new THREE.TorusGeometry(.38, .035, 5, 18), new THREE.MeshBasicMaterial({ color: 0xd1ad6e }), marker); ring.rotation.x = Math.PI / 2;
   const stem = addMesh(new THREE.ConeGeometry(.13, .26, 5), new THREE.MeshBasicMaterial({ color: 0xd1ad6e }), marker, 0, -.3, 0); stem.rotation.x = Math.PI;
   operatorGroup.userData.marker = marker;
-  addCollider(4.7, -45.5, .65);
+  operatorCollider = addCollider(4.7, -45.5, .65);
 }
 
 function createWeapon() {
@@ -374,9 +468,21 @@ function createWeapon() {
   const flashLight = new THREE.PointLight(0xffa04a, 0, 4); flashLight.position.set(.02, .02, -.85); weaponGroup.add(flashLight); muzzleFlash.userData.light = flashLight;
 }
 
-// ---------- Inimigos 3D low-poly: Errantes. ----------
-function createEnemy(x, z, index) {
+// ---------- Inimigos 3D low-poly, impostores 2D e ataques telegrafados. ----------
+function findClearSpawn(x, z) {
+  if (!enemyBlocked(x, z, .45)) return { x, z };
+  for (let radius = 1; radius <= 9; radius += 1) {
+    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
+      const nx = x + Math.cos(angle) * radius, nz = z + Math.sin(angle) * radius;
+      if (!enemyBlocked(nx, nz, .45)) return { x: nx, z: nz };
+    }
+  }
+  return { x: 0, z: -67 };
+}
+function createEnemy(x, z, index, type = 'errante') {
+  const spawn = findClearSpawn(x, z); x = spawn.x; z = spawn.z;
   const group = new THREE.Group(); group.position.set(x, 0, z); scene.add(group);
+  if (type === 'rastejador') group.scale.set(.9, .62, 1.1);
   const flesh = new THREE.MeshStandardMaterial({ color: 0x373b36, roughness: .96 });
   const torn = new THREE.MeshStandardMaterial({ color: 0x252b29, roughness: 1 });
   const violet = new THREE.MeshStandardMaterial({ color: 0x8f59c6, emissive: 0x54227d, emissiveIntensity: 1.7, roughness: .35 });
@@ -394,19 +500,87 @@ function createEnemy(x, z, index) {
   const core = addMesh(new THREE.SphereGeometry(.12, 7, 6), violet, group, 0, 1.2, -.34);
   const aura = new THREE.PointLight(0x8b49b9, .8, 3.2); aura.position.set(0, 1.4, -.2); group.add(aura);
   const shadow = addMesh(new THREE.CircleGeometry(.65, 12), new THREE.MeshBasicMaterial({ color: 0x171a17, transparent: true, opacity: .35, depthWrite: false }), group, 0, .015, 0); shadow.rotation.x = -Math.PI / 2;
-  const enemy = { group, x, z, health: enemyStats().health, speed: enemyStats().speed, damage: enemyStats().damage, attackTimer: .5 + index * .3, alive: true, hitMeshes: [body, chest, head, core], phase: Math.random() * 6, index, state: 'chase', lastAttack: 0 };
+  const stats = enemyStats(type);
+  const enemy = { group, type, x, z, health: stats.health, speed: stats.speed, damage: stats.damage,
+    attackTimer: .7 + index * .25, windup: 0, recover: 0, alive: true,
+    hitMeshes: [body, chest, head, core], phase: Math.random() * 6, index, state: 'chase', lastAttack: 0,
+    renderMeshes: group.children.filter(obj => obj.isMesh), aura, lod: '3d', sprite: null };
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: getImpostorTexture(), transparent: true, alphaTest: .12, depthWrite: false }));
+  sprite.position.set(0, 1.16, 0); sprite.scale.set(1.45, 2.25, 1); sprite.visible = false; group.add(sprite); enemy.sprite = sprite;
   [body, chest, head, core].forEach(m => m.userData.enemy = enemy);
   enemies.push(enemy);
   return enemy;
 }
-function enemyStats() {
+function enemyStats(type = 'errante') {
   const stats = {
     recruta: { health: 45, speed: 1.35, damage: 8 },
     soldado: { health: 58, speed: 1.65, damage: 11 },
     veterano: { health: 72, speed: 1.9, damage: 15 },
     pesadelo: { health: 88, speed: 2.15, damage: 19 }
   };
-  return stats[settings.difficulty] || stats.soldado;
+  const base = stats[settings.difficulty] || stats.soldado;
+  return type === 'rastejador' ? { health: base.health * .7, speed: base.speed * 1.55, damage: Math.round(base.damage * .8) } : base;
+}
+function getImpostorTexture() {
+  if (impostorTexture) return impostorTexture;
+  const c = document.createElement('canvas'); c.width = 128; c.height = 192;
+  const g = c.getContext('2d');
+  g.fillStyle = '#272e2a';
+  g.beginPath(); g.ellipse(64, 45, 22, 30, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.moveTo(39, 72); g.lineTo(88, 72); g.lineTo(103, 138); g.lineTo(28, 138); g.closePath(); g.fill();
+  g.lineWidth = 16; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(38, 88); g.lineTo(18, 145); g.moveTo(90, 88); g.lineTo(110, 145);
+  g.moveTo(49, 131); g.lineTo(39, 185); g.moveTo(79, 131); g.lineTo(89, 185); g.strokeStyle = '#2d332e'; g.stroke();
+  g.fillStyle = '#bc7af3'; g.shadowBlur = 14; g.shadowColor = '#af57f0';
+  g.fillRect(51, 40, 8, 6); g.fillRect(70, 40, 8, 6); g.shadowBlur = 0;
+  impostorTexture = new THREE.CanvasTexture(c); impostorTexture.colorSpace = THREE.SRGBColorSpace;
+  return impostorTexture;
+}
+function setEnemyLOD(enemy, distance) {
+  if (!enemy.alive) return;
+  if (enemy.lod === '3d' && distance > 32) {
+    enemy.renderMeshes.forEach(m => m.visible = false); enemy.aura.visible = false;
+    enemy.sprite.visible = true; enemy.lod = '2d';
+  } else if (enemy.lod === '2d' && distance < 26) {
+    enemy.renderMeshes.forEach(m => m.visible = true); enemy.aura.visible = true;
+    enemy.sprite.visible = false; enemy.lod = '3d';
+  }
+}
+function onEnemyKilled(enemy) {
+  enemy.alive = false; enemy.state = 'dead'; kills++;
+  enemy.sprite.visible = false; enemy.renderMeshes.forEach(m => m.visible = true);
+  enemy.group.rotation.x = -Math.PI / 2; enemy.group.position.y = .1;
+  enemy.group.traverse(obj => { if (obj.isMesh && obj !== enemy.sprite) {
+    obj.material = obj.material.clone(); obj.material.color?.multiplyScalar(.55);
+  }});
+  if (missionPhase === 1 && enemies.filter(e => e.alive).length === 0) {
+    missionPhase = 2; updateObjective('RESGATE O OPERADOR DE RÁDIO');
+    showToast('ÁREA SEGURA', 'Os Errantes foram neutralizados. Procure o operador no abrigo.', 5);
+    showRadio('Moretti: “Boa, Raul. O operador está junto ao abrigo improvisado. Vá buscá-lo.”', 5);
+    playBeep(620, .16); captureCheckpoint(2);
+  } else if (missionPhase === 4 && finalWaveSpawned && enemies.every(e => !e.alive)) {
+    missionPhase = 5; gateOpening = true;
+    updateObjective('ATRAVESSE O PORTÃO DO POSTO AVANÇADO');
+    showRadio('Moretti: “A ameaça recuou! Abrindo o portão. Entre, Raul!”', 5);
+    showToast('ACESSO LIBERADO', 'O portão está abrindo. Alcance a área de extração.', 5);
+    captureCheckpoint(5); playBeep(750, .2);
+  } else if (missionPhase === 1) updateObjective(`ELIMINE OS ERRANTES · ${kills} / 3`);
+  else if (missionPhase === 4) updateObjective(`DEFENDA O POSTO · ${enemies.filter(e => e.alive).length} AMEAÇAS`);
+}
+function startFinalDefense() {
+  if (missionPhase !== 3) return;
+  missionPhase = 4; finalSpawnTimer = 2.3; finalWaveSpawned = false;
+  updateObjective('PROTEJA O OPERADOR · PREPARE-SE');
+  showToast('CONTATO NO POSTO', 'Novas criaturas surgiram perto do portão. Prepare-se para defender o rádio.', 6);
+  showRadio('Operador: “O sinal está voltando... Não! Há algo se movendo na névoa!”', 5);
+  playThreatSound();
+}
+function spawnFinalWave() {
+  finalWaveSpawned = true;
+  createEnemy(-11.4, -82, 3); createEnemy(11.4, -82, 4); createEnemy(-2.7, -92, 5, 'rastejador');
+  updateObjective('DEFENDA O POSTO · 3 AMEAÇAS');
+  showRadio('Moretti: “Rastejador à frente! Mire nas partes expostas e não deixe que o cerquem!”', 5);
+  playThreatSound();
 }
 function triggerAmbush() {
   if (ambushTriggered) return;
@@ -425,6 +599,14 @@ function updateHUD() {
   ui.ammo.textContent = String(ammo).padStart(2, '0'); ui.reserve.textContent = String(reserveAmmo).padStart(2, '0');
   ui.compass.textContent = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'][Math.round((((yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
   ui.crosshair.classList.toggle('aimed', aiming);
+  $('stamina-fill').style.width = `${Math.round(stamina)}%`;
+  $('intel-count').textContent = intelFound ? '01 / 01' : '00 / 01';
+  const target = missionPhase <= 1 ? { x: 0, z: -22 } : missionPhase === 2 ? { x: 4.7, z: -45.5 } : { x: 0, z: -99 };
+  $('objective-distance').textContent = `${Math.round(Math.hypot(player.position.x - target.x, player.position.z - target.z))} m`;
+  $('map-player').style.top = `${Math.max(8, Math.min(92, 92 - (28 - player.position.z) / 1.36))}%`;
+  $('map-player').style.left = `${50 + player.position.x * 1.5}%`;
+  $('escort-status').textContent = operatorRescued && missionPhase <= 4 && escortGroup?.visible
+    ? `OPERADOR · ${Math.round(Math.hypot(player.position.x - escortGroup.position.x, player.position.z - escortGroup.position.z))} m` : '';
 }
 function showToast(title, text, duration = 4) {
   ui.toastTitle.textContent = title; ui.toastText.textContent = text; ui.toast.classList.remove('hidden'); toastTime = duration; lastToastKind = title;
@@ -451,16 +633,23 @@ function interact() {
   if (!activeInteractable || state !== 'playing') return;
   if (activeInteractable.type === 'operator') {
     operatorRescued = true; missionPhase = 3; operatorGroup.visible = false;
-    if (outpostGate) outpostGate.visible = false;
-    updateObjective('ALCANCE O POSTO AVANÇADO');
-    showToast('OPERADOR RESGATADO', 'O portão do posto avançado foi liberado. Siga pela estrada.', 5);
-    showRadio('Operador: “Consegui manter o rádio funcionando... Eles vieram da encosta. Não eram soldados.”', 5.5);
-    checkpoint = { x: player.position.x, z: player.position.z, health: Math.max(60, health), ammo, reserve: reserveAmmo, phase: 3, operatorRescued: true };
-    health = Math.max(60, health); saveGame(); playBeep(740, .2);
+    if (operatorCollider) operatorCollider.disabled = true;
+    escortGroup.position.set(4.7, 0, -45.5); escortGroup.visible = true;
+    updateObjective('ESCOLTE O OPERADOR ATÉ O POSTO');
+    showToast('OPERADOR RESGATADO', 'O operador vai acompanhar você. Não se afaste demais.', 5);
+    showRadio('Operador: “Eles vieram da encosta. Não eram soldados. Preciso chegar ao posto para avisar a todos.”', 5.5);
+    health = Math.max(60, health); captureCheckpoint(3); playBeep(740, .2);
   } else if (activeInteractable.type === 'pickup') {
-    const p = activeInteractable.pickup; p.used = true; p.group.visible = false;
-    if (p.type === 'medkit') { health = Math.min(100, health + 45); showToast('KIT MÉDICO', 'Condição física restaurada.', 2.5); }
-    else { reserveAmmo = Math.min(80, reserveAmmo + 24); showToast('MUNIÇÃO RECOLHIDA', 'Cartuchos adicionados ao inventário.', 2.5); }
+    const p = activeInteractable.pickup;
+    if (p.type === 'medkit' && health >= 100) { showToast('KIT MÉDICO', 'Sua vida já está cheia.', 2); return; }
+    if (p.type === 'ammo' && reserveAmmo >= 80) { showToast('MUNIÇÃO', 'Sua reserva já está cheia.', 2); return; }
+    p.used = true; p.group.visible = false;
+    if (p.type === 'medkit') { health = Math.min(100, health + 50); showToast('KIT MÉDICO', 'Condição física restaurada.', 2.5); }
+    else if (p.type === 'intel') {
+      intelFound = true;
+      showToast('DOCUMENTO JANUS · 01/01', 'Transmissões impossíveis foram registradas nesta estrada.', 5);
+      showRadio('Raul: “Um documento do Janus... fala de um sinal sob a montanha.”', 4);
+    } else { reserveAmmo = Math.min(80, reserveAmmo + 24); showToast('MUNIÇÃO RECOLHIDA', 'Cartuchos adicionados ao inventário.', 2.5); }
     updateHUD(); playBeep(650, .12);
   }
   activeInteractable = null; ui.interact.classList.add('hidden');
@@ -469,13 +658,16 @@ function showInfo(type) {
   infoReturnScreen = state === 'paused' ? ui.pause : ui.menu;
   const content = $('info-content');
   if (type === 'objectives') {
-    content.innerHTML = `<div class="eyebrow"><i></i> ORDEM DE OPERAÇÃO</div><h3>OBJETIVOS E CONTROLES</h3><p><b>Missão:</b> Cinzas na Estrada.</p><ol><li>Avançar até o comboio destruído.</li><li>Eliminar os três Errantes da emboscada.</li><li>Localizar e resgatar o operador de rádio com E.</li><li>Alcançar o posto avançado pelo portão liberado.</li></ol><div class="control-list"><div><span>Mover</span><kbd>W A S D</kbd></div><div><span>Olhar</span><kbd>MOUSE</kbd></div><div><span>Disparar</span><kbd>CLIQUE ESQ.</kbd></div><div><span>Mirar</span><kbd>CLIQUE DIR.</kbd></div><div><span>Correr</span><kbd>SHIFT</kbd></div><div><span>Agachar</span><kbd>CTRL</kbd></div><div><span>Pular</span><kbd>ESPAÇO</kbd></div><div><span>Interagir</span><kbd>E</kbd></div><div><span>Recarregar</span><kbd>R</kbd></div><div><span>Pausar</span><kbd>ESC</kbd></div></div>`;
+    content.innerHTML = `<div class="eyebrow"><i></i> ORDEM DE OPERAÇÃO</div><h3>OBJETIVOS E CONTROLES</h3><p><b>Missão:</b> Cinzas na Estrada.</p><p><b>Etapa atual:</b> ${ui.objective.textContent}.</p><ol><li>Avançar até o comboio destruído.</li><li>Eliminar os três Errantes da emboscada.</li><li>Resgatar o operador de rádio.</li><li>Escoltar o operador até o posto avançado.</li><li>Defender o posto e atravessar o portão.</li></ol><p><b>Documento opcional:</b> ${intelFound ? 'encontrado' : 'não encontrado'}.</p><div class="control-list"><div><span>Mover</span><kbd>W A S D</kbd></div><div><span>Olhar</span><kbd>MOUSE</kbd></div><div><span>Disparar</span><kbd>CLIQUE ESQ.</kbd></div><div><span>Mirar</span><kbd>CLIQUE DIR.</kbd></div><div><span>Correr</span><kbd>SHIFT</kbd></div><div><span>Agachar</span><kbd>CTRL</kbd></div><div><span>Pular</span><kbd>ESPAÇO</kbd></div><div><span>Interagir</span><kbd>E</kbd></div><div><span>Recarregar</span><kbd>R</kbd></div><div><span>Pausar</span><kbd>ESC</kbd></div></div>`;
   } else if (type === 'arsenal') {
-    content.innerHTML = `<div class="eyebrow"><i></i> ARQUIVO DE CAMPO</div><h3>ARSENAL / BESTIÁRIO</h3><p><b>Fuzil semiautomático:</b> arma inicial de médio alcance. Carregador de 8 cartuchos, recarga manual e boa precisão quando o jogador controla o recuo.</p><p><b>Errante:</b> criatura humanoide atraída por movimento e ruído. Avança em linha direta e ataca a curta distância. A cabeça e o núcleo violeta são pontos vulneráveis.</p><p><b>Equipamento:</b> kit médico e caixas de munição podem ser encontrados no cenário. O arsenal completo será liberado ao longo da campanha.</p>`;
+    content.innerHTML = `<div class="eyebrow"><i></i> ARQUIVO DE CAMPO</div><h3>ARSENAL / BESTIÁRIO</h3><p><b>Fuzil semiautomático:</b> arma inicial de médio alcance. Carregador de 8 cartuchos, recarga manual e boa precisão quando o jogador controla o recuo.</p><p><b>Errante:</b> criatura humanoide atraída por movimento e ruído. Ataca a curta distância; cabeça e núcleo violeta são vulneráveis.</p><p><b>Rastejador:</b> ameaça veloz, de silhueta baixa, encontrada perto do posto. Cuidado com o avanço rápido e a preparação do salto.</p><p><b>Equipamento:</b> kit médico e caixas de munição podem ser encontrados no cenário. O arsenal completo será liberado ao longo da campanha.</p>`;
   } else if (type === 'controls') {
     content.innerHTML = `<div class="eyebrow"><i></i> MANUAL DO OPERADOR</div><h3>CONTROLES</h3><div class="control-list"><div><span>Mover</span><kbd>W A S D</kbd></div><div><span>Olhar</span><kbd>MOUSE</kbd></div><div><span>Disparar</span><kbd>CLIQUE ESQ.</kbd></div><div><span>Mirar</span><kbd>CLIQUE DIR.</kbd></div><div><span>Correr</span><kbd>SHIFT</kbd></div><div><span>Agachar</span><kbd>CTRL</kbd></div><div><span>Pular</span><kbd>ESPAÇO</kbd></div><div><span>Interagir</span><kbd>E</kbd></div><div><span>Recarregar</span><kbd>R</kbd></div><div><span>Pausar</span><kbd>ESC</kbd></div></div><p>O navegador solicita captura do mouse ao iniciar. Pressione ESC para abrir a pausa e liberar o cursor.</p>`;
+  } else if (type === 'chapters') {
+    content.innerHTML = `<div class="eyebrow"><i></i> CAMPANHA · 01 / 12</div><h3>SELEÇÃO DE CAPÍTULO</h3><p><b>01 — Cinzas na Estrada</b> · ${completedMission ? 'CONCLUÍDA' : 'NÃO CONCLUÍDA'}</p><p>02 — A Vila sem Sinos · EM DESENVOLVIMENTO</p><button id="replay-chapter" class="action-button">REJOGAR MISSÃO 01</button>`;
+    $('replay-chapter').addEventListener('click', () => newCampaign());
   } else if (type === 'credits') {
-    content.innerHTML = `<div class="eyebrow"><i></i> REGISTRO DE PRODUÇÃO</div><h3>CRÉDITOS</h3><p><b>OPERAÇÃO ECLIPSE: A GUERRA DOS ESQUECIDOS</b></p><p>Projeto original de campanha FPS em Three.js. Protótipo de desenvolvimento — versão 0.1.0.</p><p>Direção: ficção alternativa de guerra sobrenatural. Personagens, unidade, eventos e Projeto Janus são elementos ficcionais.</p><p>Este protótipo utiliza geometria procedural e áudio sintetizado; modelos, animações e trilha definitivos ainda serão produzidos.</p>`;
+    content.innerHTML = `<div class="eyebrow"><i></i> REGISTRO DE PRODUÇÃO</div><h3>CRÉDITOS</h3><p><b>OPERAÇÃO ECLIPSE: A GUERRA DOS ESQUECIDOS</b></p><p>Projeto original de campanha FPS em Three.js. Versão jogável da Missão 01 — 0.2.0.</p><p>Direção: ficção alternativa de guerra sobrenatural. Personagens, unidade, eventos e Projeto Janus são elementos ficcionais.</p><p>Este protótipo utiliza geometria procedural e áudio sintetizado; modelos, animações e trilha definitivos ainda serão produzidos.</p>`;
   } else if (type === 'options') {
     content.innerHTML = `<div class="eyebrow"><i></i> CONFIGURAÇÃO DO SISTEMA</div><h3>OPÇÕES</h3>
       <div class="option-row"><label for="opt-volume">VOLUME GERAL</label><input id="opt-volume" type="range" min="0" max="100" value="${settings.volume}"></div>
@@ -484,6 +676,8 @@ function showInfo(type) {
       <div class="option-row"><label for="opt-quality">QUALIDADE GRÁFICA</label><select id="opt-quality"><option value="baixo" ${settings.quality === 'baixo' ? 'selected' : ''}>Baixo</option><option value="equilibrado" ${settings.quality === 'equilibrado' ? 'selected' : ''}>Equilibrado</option><option value="alto" ${settings.quality === 'alto' ? 'selected' : ''}>Alto</option></select></div>
       <div class="option-row"><label for="opt-difficulty">DIFICULDADE</label><select id="opt-difficulty"><option value="recruta" ${settings.difficulty === 'recruta' ? 'selected' : ''}>Recruta</option><option value="soldado" ${settings.difficulty === 'soldado' ? 'selected' : ''}>Soldado</option><option value="veterano" ${settings.difficulty === 'veterano' ? 'selected' : ''}>Veterano</option><option value="pesadelo" ${settings.difficulty === 'pesadelo' ? 'selected' : ''}>Pesadelo</option></select></div>
       <div class="option-row"><label for="opt-fps">EXIBIR FPS</label><input id="opt-fps" type="checkbox" ${settings.showFPS ? 'checked' : ''}></div>
+      <div class="option-row"><label for="opt-invert">INVERTER EIXO VERTICAL</label><input id="opt-invert" type="checkbox" ${settings.invertY ? 'checked' : ''}></div>
+      <div class="option-row"><label for="opt-motion">REDUZIR BALANÇO DA CÂMERA</label><input id="opt-motion" type="checkbox" ${settings.reduceMotion ? 'checked' : ''}></div>
       <p>As opções são salvas neste navegador. Alterações de qualidade são aplicadas imediatamente; a dificuldade afeta inimigos criados em uma nova tentativa.</p>`;
     setTimeout(() => {
       $('opt-volume')?.addEventListener('input', e => { settings.volume = Number(e.target.value); saveSettings(); });
@@ -492,6 +686,8 @@ function showInfo(type) {
       $('opt-quality')?.addEventListener('change', e => { settings.quality = e.target.value; applyQuality(); saveSettings(); });
       $('opt-difficulty')?.addEventListener('change', e => { settings.difficulty = e.target.value; saveSettings(); });
       $('opt-fps')?.addEventListener('change', e => { settings.showFPS = e.target.checked; saveSettings(); });
+      $('opt-invert')?.addEventListener('change', e => { settings.invertY = e.target.checked; saveSettings(); });
+      $('opt-motion')?.addEventListener('change', e => { settings.reduceMotion = e.target.checked; saveSettings(); });
     }, 0);
   }
   showScreen(ui.info);
@@ -505,37 +701,77 @@ function applyQuality() {
 // ---------- Campanha, checkpoints e estados. ----------
 function resetMission() {
   enemies.forEach(e => scene.remove(e.group)); enemies = [];
-  kills = 0; shotsFired = 0; shotsHit = 0; elapsedMission = 0; health = 100; ammo = 8; reserveAmmo = 40;
+  kills = 0; shotsFired = 0; shotsHit = 0; elapsedMission = 0;
+  health = 100; ammo = 8; reserveAmmo = 40; stamina = 100; intelFound = false;
   missionPhase = 0; operatorRescued = false; ambushTriggered = false; missionComplete = false;
-  checkpoint = { x: 0, z: 28, health: 100, ammo: 8, reserve: 40, phase: 0, operatorRescued: false };
+  finalSpawnTimer = -1; finalWaveSpawned = false; gateOpening = false; gateOpen = false;
+  isReloading = false; reloadTime = 0; fireCooldown = 0; aiming = false; muzzleTime = 0;
+  ui.reload.textContent = ''; ui.radio.classList.add('hidden'); ui.toast.classList.add('hidden');
   if (operatorGroup) operatorGroup.visible = true;
-  if (outpostGate) outpostGate.visible = true;
+  if (operatorCollider) operatorCollider.disabled = false;
+  if (escortGroup) escortGroup.visible = false;
+  if (outpostGate) { outpostGate.visible = true; outpostGate.position.y = 1.35; }
   pickups.forEach(p => { p.used = false; p.group.visible = true; });
-  player.position.set(0, 1.7, 28); yaw = 0; pitch = 0; camera.rotation.set(0, 0, 0); camera.position.copy(player.position);
-  updateObjective('AVANCE ATÉ O COMBOIO DESTRUÍDO'); updateHUD(); saveGame();
+  player.position.set(0, 1.7, 28); yaw = 0; pitch = 0; camera.rotation.set(0, 0, 0);
+  camera.position.copy(player.position);
+  keys = Object.create(null);
+  updateObjective('AVANCE ATÉ O COMBOIO DESTRUÍDO'); updateHUD();
+  captureCheckpoint(0);
 }
 function loadCheckpoint() {
-  const cp = checkpoint || { x: 0, z: 28, health: 100, ammo: 8, reserve: 40, phase: 0, operatorRescued: false };
-  player.position.set(cp.x, 1.7, cp.z); health = cp.health; ammo = cp.ammo; reserveAmmo = cp.reserve; kills = cp.phase >= 2 ? 3 : 0;
-  operatorRescued = !!cp.operatorRescued; missionPhase = cp.phase || 0;
+  const cp = checkpoint || { x: 0, z: 28, health: 100, ammo: 8, reserve: 40, phase: 0 };
+  const num = (value, fallback, min, max) => Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+  player.position.set(num(cp.x, 0, -17, 17), 1.7, num(cp.z, 28, -101, 30));
+  health = num(cp.health, 100, 1, 100); ammo = num(cp.ammo, 8, 0, 8);
+  reserveAmmo = num(cp.reserve, 40, 0, 80); stamina = num(cp.stamina, 100, 0, 100);
+  missionPhase = num(cp.phase, 0, 0, 5);
+  operatorRescued = !!cp.operatorRescued; intelFound = !!cp.intelFound;
+  kills = num(cp.kills, missionPhase >= 2 ? 3 : 0, 0, TOTAL_ENEMIES);
+  shotsFired = num(cp.shotsFired, 0, 0, 100000);
+  shotsHit = num(cp.shotsHit, 0, 0, shotsFired);
+  elapsedMission = num(cp.elapsedMission, 0, 0, 86400);
+  ambushTriggered = missionPhase >= 1;
+  finalWaveSpawned = missionPhase >= 5;
+  finalSpawnTimer = -1; gateOpening = missionPhase >= 5; gateOpen = false;
+  missionComplete = false;
+  isReloading = false; reloadTime = 0; fireCooldown = 0; aiming = false;
+  ui.reload.textContent = '';
   if (operatorGroup) operatorGroup.visible = !operatorRescued;
-  if (outpostGate) outpostGate.visible = !operatorRescued;
+  if (operatorCollider) operatorCollider.disabled = operatorRescued;
+  if (escortGroup) {
+    escortGroup.visible = operatorRescued;
+    escortGroup.position.set(num(cp.x, 0, -17, 17) + 1, 0, num(cp.z, -45.5, -101, 30) + 1.7);
+  }
+  if (outpostGate) { outpostGate.visible = true; outpostGate.position.y = missionPhase >= 5 ? 5.5 : 1.35; }
+  if (missionPhase >= 5) { gateOpen = true; gateOpening = false; }
+  pickups.forEach((p, i) => {
+    p.used = Array.isArray(cp.pickups) ? !!cp.pickups[i] : (p.type === 'intel' && intelFound);
+    p.group.visible = !p.used;
+  });
   enemies.forEach(e => scene.remove(e.group)); enemies = [];
-  ambushTriggered = missionPhase >= 1 && missionPhase < 3;
-  if (ambushTriggered && missionPhase < 2) { createEnemy(-9.2, -34.5, 0); createEnemy(10.0, -36.5, 1); createEnemy(-1.0, -49.0, 2); }
-  if (missionPhase >= 2 && !operatorRescued) { /* o caminho de resgate permanece aberto */ }
-  updateObjective(operatorRescued ? 'ALCANCE O POSTO AVANÇADO' : missionPhase >= 2 ? 'RESGATE O OPERADOR DE RÁDIO' : missionPhase === 1 ? 'ELIMINE OS ERRANTES' : 'AVANCE ATÉ O COMBOIO DESTRUÍDO');
-  updateHUD();
+  if (missionPhase === 1) {
+    createEnemy(-9.2, -34.5, 0); createEnemy(10.0, -36.5, 1); createEnemy(-1.0, -49.0, 2);
+    kills = 0;
+  } else if (missionPhase === 4) {
+    finalWaveSpawned = true;
+    createEnemy(-11.4, -82, 3); createEnemy(11.4, -82, 4); createEnemy(-2.7, -92, 5, 'rastejador');
+  }
+  updateObjective([
+    'AVANCE ATÉ O COMBOIO DESTRUÍDO', 'ELIMINE OS ERRANTES · 0 / 3',
+    'RESGATE O OPERADOR DE RÁDIO', 'ESCOLTE O OPERADOR ATÉ O POSTO',
+    'DEFENDA O POSTO · 3 AMEAÇAS', 'ATRAVESSE O PORTÃO DO POSTO AVANÇADO'
+  ][missionPhase]);
+  keys = Object.create(null); updateHUD();
 }
-function newCampaign() { clearSave(); pendingContinue = false; resetMission(); showScreen(ui.briefing); state = 'briefing'; }
+function newCampaign() {
+  clearSave(); pendingContinue = false; resetMission();
+  showScreen(ui.briefing); state = 'briefing';
+}
 function continueCampaign() {
-  if (!savedGame) return;
+  if (!savedGame || !savedGame.checkpoint) return;
   pendingContinue = true;
   checkpoint = { ...savedGame.checkpoint };
-  kills = savedGame.kills || 0; shotsFired = savedGame.shotsFired || 0; shotsHit = savedGame.shotsHit || 0;
-  elapsedMission = savedGame.elapsedMission || 0; settings.difficulty = savedGame.difficulty || settings.difficulty;
-  missionPhase = savedGame.missionPhase || checkpoint.phase || 0; operatorRescued = !!savedGame.operatorRescued;
-  ambushTriggered = !!savedGame.ambushTriggered;
+  settings.difficulty = savedGame.difficulty || settings.difficulty;
   showScreen(ui.briefing); state = 'briefing';
 }
 function beginGameplay() {
@@ -544,42 +780,47 @@ function beginGameplay() {
   pendingContinue = false;
   state = 'playing'; showScreen(null); ui.hud.classList.remove('hidden'); weaponGroup.visible = true;
   camera.position.copy(player.position); camera.rotation.set(pitch, yaw, 0);
-  try { canvas.requestPointerLock(); } catch { ui.pointerHint.classList.remove('hidden'); }
-  showToast('OBJETIVO', 'Avance pela estrada até localizar o comboio destruído. WASD para mover, SHIFT para correr.', 6);
+  requestLock();
+  showToast('OBJETIVO', 'Avance pela estrada. WASD move, SHIFT corre, botão direito mira.', 6);
   showRadio('Moretti: “Raul, está ouvindo? O comboio parou de responder há seis minutos. Encontre o operador.”', 6);
-  saveGame();
 }
 function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused'; showScreen(ui.pause); ui.pointerHint.classList.add('hidden');
+  keys = Object.create(null); aiming = false; $('tactical-map').classList.add('hidden');
   intentionalUnlock = true; if (document.pointerLockElement) document.exitPointerLock();
 }
 function resumeGame() {
   if (state !== 'paused') return;
-  state = 'playing'; showScreen(null);
-  try { canvas.requestPointerLock(); } catch { ui.pointerHint.classList.remove('hidden'); }
+  state = 'playing'; showScreen(null); requestLock();
 }
 function restartFromCheckpoint() {
-  if (state === 'dead') showScreen(null);
-  state = 'playing'; loadCheckpoint(); ui.hud.classList.remove('hidden');
-  try { canvas.requestPointerLock(); } catch { ui.pointerHint.classList.remove('hidden'); }
+  state = 'playing'; showScreen(null); loadCheckpoint(); ui.hud.classList.remove('hidden');
+  requestLock();
 }
 function die() {
   health = 0; updateHUD(); state = 'dead'; showScreen(ui.death); ui.hud.classList.add('hidden');
   intentionalUnlock = true; if (document.pointerLockElement) document.exitPointerLock();
 }
 function finishMission() {
-  if (missionComplete) return;
+  if (missionComplete || missionPhase !== 5 || !gateOpen) return;
   missionComplete = true; state = 'complete'; ui.hud.classList.add('hidden');
-  $('result-kills').textContent = kills; $('result-accuracy').textContent = `${shotsFired ? Math.round(shotsHit / shotsFired * 100) : 0}%`; $('result-health').textContent = Math.round(health);
+  $('result-kills').textContent = kills;
+  $('result-accuracy').textContent = `${shotsFired ? Math.round(shotsHit / shotsFired * 100) : 0}%`;
+  $('result-health').textContent = Math.round(health);
+  $('result-time').textContent = `${String(Math.floor(elapsedMission / 60)).padStart(2, '0')}:${String(Math.floor(elapsedMission % 60)).padStart(2, '0')}`;
+  $('result-intel').textContent = intelFound ? '01 / 01' : '00 / 01';
+  completedMission = { version: 1, mission: '01', bestTime: Math.min(completedMission?.bestTime ?? Infinity, elapsedMission), intelFound: intelFound || !!completedMission?.intelFound };
+  writeJSON(COMPLETION_KEY, completedMission);
   showScreen(ui.complete); intentionalUnlock = true; if (document.pointerLockElement) document.exitPointerLock();
-  clearSave(); playBeep(880, .35);
+  clearSave(); updateContinueButton(); playBeep(880, .35);
 }
 
 // ---------- Combate e movimentação. ----------
 function canMoveTo(x, z) {
   if (x < -18 || x > 18 || z > 33 || z < -105) return false;
-  for (const c of colliders) if (Math.hypot(x - c.x, z - c.z) < c.r + player.radius) return false;
+  if (z < -95.3 && (!gateOpen || Math.abs(x) > 5.5)) return false;
+  for (const c of colliders) if (!c.disabled && Math.hypot(x - c.x, z - c.z) < c.r + player.radius) return false;
   return true;
 }
 function startReload() {
@@ -592,12 +833,14 @@ function finishReload() {
 function shoot() {
   if (state !== 'playing' || !pointerLocked || isReloading || fireCooldown > 0) return;
   if (ammo <= 0) { playBeep(130, .08); startReload(); return; }
-  ammo--; shotsFired++; fireCooldown = .34; recoil = Math.min(.12, recoil + .085); updateHUD(); playShotSound();
-  muzzleFlash.visible = true; muzzleFlash.userData.light.intensity = 4.5;
+  ammo--; shotsFired++; fireCooldown = .34; recoil = Math.min(.12, recoil + .085);
+  muzzleTime = .075; muzzleFlash.visible = true; muzzleFlash.userData.light.intensity = 4.5;
+  updateHUD(); playShotSound();
   const direction = new THREE.Vector3(); camera.getWorldDirection(direction);
   raycaster.set(camera.position, direction); raycaster.far = 65;
+  // Obstáculos sólidos participam do raycast: sem tiros atravessando caminhões ou paredes.
   const targets = enemies.filter(e => e.alive).flatMap(e => e.hitMeshes);
-  const intersections = raycaster.intersectObjects(targets, false);
+  const intersections = raycaster.intersectObjects([...worldObstacles, ...targets], false);
   let end = camera.position.clone().add(direction.clone().multiplyScalar(55));
   if (intersections.length) {
     const hit = intersections[0]; end.copy(hit.point);
@@ -606,21 +849,15 @@ function shoot() {
       const headshot = hit.object.userData.part === 'head' || hit.object.userData.part === 'eye';
       const damage = headshot ? 42 : 29;
       enemy.health -= damage; shotsHit++; hitTime = .16; ui.hit.classList.remove('hidden');
-      enemy.group.traverse(obj => { if (obj.isMesh && obj.material && obj.material.emissive) { obj.material.emissive.setHex(0x5b225d); obj.material.emissiveIntensity = .8; } });
-      if (enemy.health <= 0) {
-        enemy.alive = false; kills++; enemy.group.rotation.x = -Math.PI / 2; enemy.group.position.y = .1;
-        enemy.group.traverse(obj => { if (obj.isMesh) { obj.material = obj.material.clone(); obj.material.color?.multiplyScalar(.6); } });
-        if (ambushTriggered && enemies.every(e => !e.alive)) {
-          missionPhase = 2; updateObjective('RESGATE O OPERADOR DE RÁDIO');
-          showToast('ÁREA SEGURA', 'Os Errantes foram neutralizados. Localize o operador junto ao abrigo.', 5);
-          showRadio('Moretti: “Boa, Raul. O operador está próximo ao abrigo improvisado. Vá buscá-lo.”', 5);
-          playBeep(620, .16); checkpoint = { x: player.position.x, z: player.position.z, health, ammo, reserve: reserveAmmo, phase: 2, operatorRescued: false }; saveGame();
-        } else if (ambushTriggered) updateObjective(`ELIMINE OS ERRANTES · ${kills} / 3`);
-      }
+      enemy.group.traverse(obj => { if (obj.isMesh && obj.material?.emissive) {
+        obj.material.emissive.setHex(0x5b225d); obj.material.emissiveIntensity = .8;
+      }});
+      if (enemy.health <= 0) onEnemyKilled(enemy);
     }
   }
   const lineGeo = new THREE.BufferGeometry().setFromPoints([camera.position.clone(), end]);
-  const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xf2c27a, transparent: true, opacity: .75 })); scene.add(line); effects.push({ type: 'tracer', object: line, life: .055 });
+  const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xf2c27a, transparent: true, opacity: .75 }));
+  scene.add(line); effects.push({ type: 'tracer', object: line, life: .055 });
 }
 function damagePlayer(amount) {
   health = Math.max(0, health - amount); updateHUD(); damageFlashTime = .22; ui.damage.style.opacity = '.85';
@@ -636,8 +873,12 @@ function updatePlayer(dt) {
   const wish = new THREE.Vector3().addScaledVector(forward, forwardInput).addScaledVector(right, sideInput);
   if (wish.lengthSq() > 0) wish.normalize();
   isCrouching = !!keys.ControlLeft || !!keys.ControlRight;
-  const sprinting = (keys.ShiftLeft || keys.ShiftRight) && !isCrouching && !aiming;
+  const sprinting = moving && (keys.ShiftLeft || keys.ShiftRight) && !isCrouching && !aiming && stamina > 1;
+  stamina = Math.min(100, Math.max(0, stamina + (sprinting ? -22 : 17) * dt));
   const speed = isCrouching ? 2.15 : sprinting ? 7.0 : 4.7;
+  if (moving && grounded) { stepsTimer -= dt; if (stepsTimer <= 0) {
+    playStepSound(); stepsTimer = sprinting ? .32 : isCrouching ? .68 : .48;
+  }} else stepsTimer = 0;
   const dx = wish.x * speed * dt; const dz = wish.z * speed * dt;
   const nextX = player.position.x + dx; if (canMoveTo(nextX, player.position.z)) player.position.x = nextX;
   const nextZ = player.position.z + dz; if (canMoveTo(player.position.x, nextZ)) player.position.z = nextZ;
@@ -649,46 +890,108 @@ function updatePlayer(dt) {
   camera.rotation.set(pitch - recoil, yaw, 0);
   const targetFov = aiming ? Math.max(55, settings.fov - 20) : settings.fov;
   camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix();
-  const bob = moving ? Math.sin(elapsedMission * (sprinting ? 13 : 9)) * (sprinting ? .012 : .007) : 0;
+  const bob = moving && !settings.reduceMotion ? Math.sin(elapsedMission * (sprinting ? 13 : 9)) * (sprinting ? .012 : .007) : 0;
   const targetWeaponPos = aiming ? new THREE.Vector3(.13, -.28, -.5) : new THREE.Vector3(.38, -.34 + bob, -.58);
   weaponGroup.position.lerp(targetWeaponPos, Math.min(1, dt * 12));
   weaponGroup.rotation.z += ((moving ? Math.sin(elapsedMission * 8) * .012 : 0) - weaponGroup.rotation.z) * Math.min(1, dt * 9);
   recoil = Math.max(0, recoil - dt * .42);
   if (fireCooldown > 0) fireCooldown -= dt;
-  if (muzzleFlash.visible) { muzzleFlash.visible = false; muzzleFlash.userData.light.intensity = 0; }
+  if (muzzleTime > 0) { muzzleTime -= dt; if (muzzleTime <= 0) {
+    muzzleFlash.visible = false; muzzleFlash.userData.light.intensity = 0;
+  }}
   if (isReloading) { reloadTime -= dt; if (reloadTime <= 0) finishReload(); }
   if (missionPhase === 0 && player.position.z < -8) {
     missionPhase = 1; updateObjective('ELIMINE OS ERRANTES · 0 / 3'); triggerAmbush();
   }
-  if (operatorRescued && player.position.z < -91) finishMission();
+  updateEscort(dt);
+  if (missionPhase === 3 && player.position.z < -78 && escortGroup.position.z < -72) startFinalDefense();
+  if (missionPhase === 4 && !finalWaveSpawned) {
+    finalSpawnTimer -= dt;
+    if (finalSpawnTimer <= 0) spawnFinalWave();
+  }
+  if (gateOpening && outpostGate) {
+    outpostGate.position.y = Math.min(5.5, outpostGate.position.y + dt * 1.75);
+    if (outpostGate.position.y >= 5.5) { gateOpening = false; gateOpen = true; }
+  }
+  if (missionPhase === 5 && gateOpen && player.position.z < -99 && Math.abs(player.position.x) < 5.5) finishMission();
   if (player.position.z < -17 && !ambushTriggered) triggerAmbush();
   updateInteractPrompt();
+}
+function updateEscort(dt) {
+  if (!operatorRescued || !escortGroup?.visible || missionPhase >= 5) return;
+  const followX = missionPhase === 4 ? 3.8 : player.position.x + Math.sin(yaw) * 2.2;
+  const followZ = missionPhase === 4 ? -76.5 : player.position.z + Math.cos(yaw) * 2.2;
+  const dx = followX - escortGroup.position.x, dz = followZ - escortGroup.position.z;
+  const distance = Math.hypot(dx, dz);
+  if (distance > 1.35) {
+    const speed = distance > 9 ? 5.5 : 3.45;
+    const step = Math.min(distance - 1.3, speed * dt);
+    const nx = escortGroup.position.x + dx / distance * step;
+    const nz = escortGroup.position.z + dz / distance * step;
+    if (!enemyBlocked(nx, nz, .25)) escortGroup.position.set(nx, 0, nz);
+    else {
+      // Se o operador ficar preso em destroços, tenta um desvio lateral.
+      const alternatives = [[-dz / distance, dx / distance], [dz / distance, -dx / distance]];
+      for (const [ax, az] of alternatives) {
+        if (!enemyBlocked(escortGroup.position.x + ax * step, escortGroup.position.z + az * step, .25)) {
+          escortGroup.position.x += ax * step; escortGroup.position.z += az * step; break;
+        }
+      }
+    }
+    escortGroup.rotation.y = Math.atan2(dx, dz) + Math.PI;
+    escortGroup.userData.walkTime += dt;
+    escortGroup.position.y = settings.reduceMotion ? 0 : Math.abs(Math.sin(escortGroup.userData.walkTime * 8)) * .025;
+  }
 }
 function updateEnemies(dt) {
   if (state !== 'playing') return;
   for (const e of enemies) {
     if (!e.alive) continue;
-    const dx = player.position.x - e.group.position.x; const dz = player.position.z - e.group.position.z;
+    const dx = player.position.x - e.group.position.x;
+    const dz = player.position.z - e.group.position.z;
     const distance = Math.hypot(dx, dz);
-    if (distance > 1.42) {
-      const step = e.speed * dt; const nx = e.group.position.x + dx / Math.max(distance, .001) * step; const nz = e.group.position.z + dz / Math.max(distance, .001) * step;
-      // Evita atravessar os veículos e grandes obstáculos: tenta uma pequena deriva lateral.
-      if (!enemyBlocked(nx, nz)) { e.group.position.x = nx; e.group.position.z = nz; }
-      else {
-        const sign = Math.sign(dx || 1); const sx = e.group.position.x + sign * step; const sz = e.group.position.z + step * .65;
-        if (!enemyBlocked(sx, sz)) { e.group.position.x = sx; e.group.position.z = sz; }
+    setEnemyLOD(e, distance);
+    e.group.rotation.y = Math.atan2(dx, dz) + Math.PI;
+    if (e.state === 'windup') {
+      e.aura.intensity = 2.5;
+      e.windup -= dt;
+      e.group.scale.x = 1 + .1 * Math.sin(e.windup * 35);
+      if (e.windup <= 0) {
+        if (distance < (e.type === 'rastejador' ? 2.4 : 1.9)) damagePlayer(e.damage);
+        e.state = 'recover'; e.recover = e.type === 'rastejador' ? .9 : 1.1;
+        e.aura.intensity = .8;
+        e.group.scale.x = e.type === 'rastejador' ? .9 : 1;
       }
-      e.group.rotation.y = Math.atan2(dx, dz) + Math.PI;
-      e.group.position.y = Math.abs(Math.sin(elapsedMission * 7 + e.phase)) * .055;
-    } else {
-      e.attackTimer -= dt;
-      if (e.attackTimer <= 0) { e.attackTimer = 1.25; damagePlayer(e.damage); playBeep(90, .08); }
+      continue;
     }
-    e.group.children.forEach((child, i) => { if (child.isMesh && child.geometry.type === 'CylinderGeometry' && i % 2 === 0) child.rotation.x = Math.sin(elapsedMission * 7 + e.phase) * .12; });
+    if (e.state === 'recover') { e.recover -= dt; if (e.recover <= 0) e.state = 'chase'; continue; }
+    if (distance <= (e.type === 'rastejador' ? 1.9 : 1.55)) {
+      e.state = 'windup'; e.windup = e.type === 'rastejador' ? .38 : .52;
+      playThreatSound();
+      continue;
+    }
+    if (distance > .01) {
+      const step = Math.min(e.speed * dt, distance - 1.35);
+      const nx = e.group.position.x + dx / distance * step;
+      const nz = e.group.position.z + dz / distance * step;
+      if (!enemyBlocked(nx, nz, .32)) { e.group.position.x = nx; e.group.position.z = nz; }
+      else {
+        // Procura uma direção livre em volta de obstáculos sem teletransportar inimigos.
+        const angle = Math.atan2(dz, dx);
+        const offsets = [.5, -.5, 1, -1, 1.6, -1.6, 2.2, -2.2, Math.PI];
+        for (const offset of offsets) {
+          const ax = e.group.position.x + Math.cos(angle + offset) * step;
+          const az = e.group.position.z + Math.sin(angle + offset) * step;
+          if (!enemyBlocked(ax, az, .32)) { e.group.position.x = ax; e.group.position.z = az; break; }
+        }
+      }
+      e.group.position.y = Math.abs(Math.sin(elapsedMission * 7 + e.phase)) * .055;
+    }
   }
 }
-function enemyBlocked(x, z) {
-  for (const c of colliders) if (Math.hypot(x - c.x, z - c.z) < c.r + .35) return true;
+function enemyBlocked(x, z, radius = .35) {
+  if (x < -17.5 || x > 17.5 || z < -95 || z > 33) return true;
+  for (const c of colliders) if (!c.disabled && Math.hypot(x - c.x, z - c.z) < c.r + radius) return true;
   return false;
 }
 function updateEffects(dt) {
@@ -704,6 +1007,7 @@ function updateEffects(dt) {
   if (toastTime > 0) { toastTime -= dt; if (toastTime <= 0) ui.toast.classList.add('hidden'); }
   if (radioTime > 0) { radioTime -= dt; if (radioTime <= 0) ui.radio.classList.add('hidden'); }
   if (hitTime > 0) { hitTime -= dt; if (hitTime <= 0) ui.hit.classList.add('hidden'); }
+  if (saveIndicatorTime > 0) { saveIndicatorTime -= dt; if (saveIndicatorTime <= 0) $('save-indicator').classList.add('hidden'); }
 }
 function updateGame(dt) {
   if (state !== 'playing') return;
@@ -719,7 +1023,7 @@ function updateGame(dt) {
 function onMouseMove(event) {
   if (!pointerLocked || state !== 'playing') return;
   const scale = .0022 * settings.sensitivity;
-  yaw -= event.movementX * scale; pitch -= event.movementY * scale;
+  yaw -= event.movementX * scale; pitch += event.movementY * scale * (settings.invertY ? 1 : -1);
   pitch = Math.max(-1.42, Math.min(1.42, pitch));
 }
 function requestLock() {
@@ -728,13 +1032,14 @@ function requestLock() {
   }
 }
 function handleKeyDown(e) {
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && state === 'playing') e.preventDefault();
   keys[e.code] = true;
   if (e.code === 'Escape') { if (state === 'playing') pauseGame(); else if (state === 'paused') resumeGame(); }
   if (e.code === 'KeyE' && !e.repeat) interact();
   if (e.code === 'KeyR' && !e.repeat) startReload();
+  if (e.code === 'Tab' && state === 'playing') { e.preventDefault(); $('tactical-map').classList.remove('hidden'); }
 }
-function handleKeyUp(e) { keys[e.code] = false; }
+function handleKeyUp(e) { keys[e.code] = false; if (e.code === 'Tab') $('tactical-map').classList.add('hidden'); }
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), .04);
@@ -747,7 +1052,7 @@ function animate() {
 }
 
 // ---------- Eventos de interface. ----------
-$('new-game-btn').addEventListener('click', () => { initAudio(); newCampaign(); });
+$('new-game-btn').addEventListener('click', () => { if (savedGame && !window.confirm('Iniciar nova campanha? O checkpoint atual será substituído.')) return; initAudio(); newCampaign(); });
 $('continue-btn').addEventListener('click', continueCampaign);
 $('chapters-btn').addEventListener('click', () => showInfo('chapters'));
 $('arsenal-btn').addEventListener('click', () => showInfo('arsenal'));

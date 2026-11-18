@@ -5,3 +5,23 @@
 @media(max-width:760px){.menu-content{left:7%;top:12%;width:86vw}.menu-topline,.menu-footer{left:6%;right:6%;font-size:7px;letter-spacing:1px}.menu-footer{gap:15px}.menu-footer span:last-child{text-align:right}.menu-button{font-size:17px;padding-top:8px;padding-bottom:7px}.menu-button span{top:10px}.game-subtitle{letter-spacing:4px}.menu-copy{font-size:13px}.briefing-panel{padding:24px}.briefing-grid{gap:12px}.briefing-grid strong{font-size:15px}.briefing-lead{font-size:14px}.hud-top{left:2%;right:2%;top:2%;gap:6px}.mission-label{display:none}.objective-box{min-width:0;flex:1;padding:8px}.objective-box strong{font-size:12px}.compass-box{padding:7px;min-width:48px}.hud-bottom{left:2%;right:2%;bottom:2%}.health-panel,.ammo-panel{min-width:0;padding:8px}.health-track{width:75px}.health-row{gap:5px}.ammo-row{font-size:27px}.ammo-row strong{font-size:30px}.ammo-row b{font-size:18px}.tutorial-toast{left:2%;bottom:15%;max-width:260px}.pause-hint{display:none}.radio-subtitle{bottom:15%}}
 
 #main-menu:before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(7,10,9,.88) 0%,rgba(7,10,9,.66) 35%,rgba(7,10,9,.12) 72%,rgba(7,10,9,.2) 100%);pointer-events:none}.menu-content,.menu-topline,.menu-footer{z-index:1}.fps-counter{position:absolute;right:3%;top:11%;font-size:10px;letter-spacing:1px;color:#e0c38c;background:rgba(8,12,10,.65);padding:5px 8px}.fps-counter.hidden{display:none}
+
+/* Missão 01 concluída — informações de campanha, mapa e checkpoint. */
+.stamina-row{display:flex;align-items:center;gap:10px;margin-top:7px;color:#aaa28e;font-size:8px;letter-spacing:1.3px}
+.stamina-track{height:4px;background:#403c31;flex:1}.stamina-track i{display:block;height:100%;width:100%;background:#819b87;transition:width .14s}
+.hud-secondary{position:absolute;left:3%;top:11%;display:flex;gap:12px;flex-wrap:wrap;align-items:center;max-width:65vw}
+.hud-secondary span{background:rgba(10,14,12,.76);border:1px solid rgba(218,204,171,.12);color:#bdb6a6;padding:6px 9px;font-size:9px;letter-spacing:1.2px}
+.hud-secondary span:empty{display:none}.hud-secondary b{color:#e2c58c;margin-left:5px}
+.save-indicator{position:absolute;right:3%;top:17%;color:#c6a46a;background:rgba(10,14,12,.85);padding:8px 12px;font-size:10px;letter-spacing:1.4px;animation:toast-in .25s ease-out}
+.save-indicator.hidden,.tactical-map.hidden{display:none}
+.tactical-map{position:absolute;right:3%;top:24%;width:230px;padding:14px;background:rgba(11,17,14,.94);border:1px solid rgba(198,164,106,.42);box-shadow:0 8px 30px #0008}
+.map-heading{color:#d7b77f;font-size:11px;letter-spacing:1.3px;text-align:center}
+.map-route{position:relative;height:300px;margin:10px auto 6px;width:145px;border-left:1px dashed #71674f;border-right:1px dashed #71674f;background:linear-gradient(90deg,transparent 39%,#363a32 40%,#363a32 60%,transparent 61%)}
+.map-road{position:absolute;left:49%;top:4%;bottom:4%;border-left:2px dashed #8b856e;opacity:.7}
+.map-point{position:absolute;right:7px;font-size:9px;color:#e3d6bc;letter-spacing:.7px;padding:3px;background:#151b16}
+.map-start{top:91%}.map-convoy{top:57%}.map-radio{top:39%}.map-exit{top:5%}
+.map-player{position:absolute;top:91%;left:50%;width:10px;height:10px;border:2px solid #e9bd70;background:#151b16;transform:translate(-50%,-50%) rotate(45deg);z-index:2;box-shadow:0 0 10px #e9bd70}
+.tactical-map p{font-size:10px;color:#a59c8a;text-align:center;margin:6px 0 0}
+.pointer-hint{pointer-events:none}
+@media(max-width:760px){.hud-secondary{top:12%;left:2%;max-width:82vw;gap:4px}.hud-secondary span{font-size:8px;padding:4px}.tactical-map{right:2%;top:20%;width:190px}.map-route{height:240px}.save-indicator{top:17%;font-size:8px}.stamina-row{gap:5px}}
+@media(max-height:680px){.menu-content{top:9%;max-height:82vh}.menu-button{padding-top:6px;padding-bottom:5px}.menu-copy{margin-bottom:12px}.hud-secondary{top:14%}}

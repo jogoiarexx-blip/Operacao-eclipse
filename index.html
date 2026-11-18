@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#101311" />
-  <meta name="description" content="Operação Eclipse: A Guerra dos Esquecidos — protótipo jogável da missão 01." />
+  <meta name="description" content="Operação Eclipse: A Guerra dos Esquecidos — missão 01 completa, FPS de guerra sobrenatural para navegador." />
   <title>Operação Eclipse — A Guerra dos Esquecidos</title>
   <link rel="stylesheet" href="./src/style.css" />
   <script type="importmap">
@@ -39,7 +39,7 @@
           <button id="credits-btn" class="menu-button"><span>06</span> CRÉDITOS <small>INFORMAÇÕES DO PROJETO</small></button>
         </nav>
       </div>
-      <div class="menu-footer"><span>BUILD DE DESENVOLVIMENTO 0.1.0</span><span>© OPERAÇÃO ECLIPSE · FICÇÃO ALTERNATIVA</span></div>
+      <div class="menu-footer"><span>MISSÃO 01 · BUILD 0.2.0</span><span>© OPERAÇÃO ECLIPSE · FICÇÃO ALTERNATIVA</span></div>
     </section>
 
     <section id="mission-briefing" class="screen modal-screen">
@@ -92,8 +92,10 @@
           <div><label>PRECISÃO</label><strong id="result-accuracy">0%</strong></div>
           <div><label>VIDA RESTANTE</label><strong id="result-health">100</strong></div>
           <div><label>OPERADOR</label><strong>RESGATADO</strong></div>
+          <div><label>TEMPO DE OPERAÇÃO</label><strong id="result-time">00:00</strong></div>
+          <div><label>DOCUMENTO JANUS</label><strong id="result-intel">00 / 01</strong></div>
         </div>
-        <div class="briefing-note"><span class="note-mark">i</span><span>A próxima missão, “A Vila sem Sinos”, será disponibilizada em uma atualização futura.</span></div>
+        <div class="briefing-note"><span class="note-mark">i</span><span>Você concluiu a Missão 01. A Vila sem Sinos será disponibilizada em uma atualização futura.</span></div>
         <div class="briefing-actions"><button id="complete-menu-btn" class="action-button">VOLTAR AO MENU <b>→</b></button></div>
       </div>
     </section>
@@ -112,8 +114,15 @@
         <div class="compass-box"><span>N</span><div class="compass-line"></div><b id="compass-value">N</b></div>
       </div>
       <div class="hud-bottom">
-        <div class="health-panel"><div class="hud-kicker">CONDIÇÃO</div><div class="health-row"><span class="health-cross">+</span><div class="health-track"><i id="health-fill"></i></div><strong id="health-value">100</strong></div></div>
+        <div class="health-panel"><div class="hud-kicker">CONDIÇÃO</div><div class="health-row"><span class="health-cross">+</span><div class="health-track"><i id="health-fill"></i></div><strong id="health-value">100</strong></div><div class="stamina-row"><span>FÔLEGO</span><div class="stamina-track"><i id="stamina-fill"></i></div></div></div>
         <div class="ammo-panel"><div class="hud-kicker">FUZIL SEMIAUTOMÁTICO</div><div class="ammo-row"><strong id="ammo-current">08</strong><span>/</span><b id="ammo-reserve">40</b></div><div id="reload-label" class="reload-label"></div></div>
+      </div>
+      <div class="hud-secondary"><span id="escort-status"></span><span>DOCUMENTO JANUS <b id="intel-count">00 / 01</b></span><span>ALVO <b id="objective-distance">0 m</b></span></div>
+      <div id="save-indicator" class="save-indicator hidden">◈ CHECKPOINT SALVO</div>
+      <div id="tactical-map" class="tactical-map hidden">
+        <div class="map-heading">MAPA TÁTICO · MISSÃO 01</div>
+        <div class="map-route"><div class="map-road"></div><span class="map-point map-start">INÍCIO</span><span class="map-point map-convoy">COMBOIO</span><span class="map-point map-radio">OPERADOR</span><span class="map-point map-exit">POSTO</span><i id="map-player" class="map-player"></i></div>
+        <p>Estrada dos Apeninos · rota aproximada</p>
       </div>
       <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
       <div id="interact-prompt" class="interact-prompt hidden"><kbd>E</kbd><span>INTERAGIR</span></div>
@@ -121,13 +130,27 @@
       <div id="radio-subtitle" class="radio-subtitle hidden"><span>RÁDIO · ESQUADRÃO NÉBULA</span><p id="radio-text"></p></div>
       <div id="hit-marker" class="hit-marker hidden">×</div>
       <div id="damage-flash" class="damage-flash"></div>
-      <div id="pause-hint">ESC · PAUSAR</div>
+      <div id="pause-hint">TAB · MAPA TÁTICO &nbsp; | &nbsp; ESC · PAUSAR</div>
       <div id="fps-counter" class="fps-counter hidden">60 FPS</div>
     </section>
 
     <div id="pointer-hint" class="pointer-hint hidden">CLIQUE PARA RETOMAR O CONTROLE DO MOUSE</div>
     <div id="loading-screen" class="loading-screen"><div class="loading-mark">E</div><div class="loading-title">PREPARANDO OPERAÇÃO</div><div class="loading-track"><i id="loading-fill"></i></div><small id="loading-status">INICIALIZANDO AMBIENTE 3D</small></div>
   </div>
+  <script>
+    window.addEventListener('error', (event) => {
+      if (!String(event.message || '').includes('module') && !String(event.message || '').includes('import')) return;
+      const status = document.getElementById('loading-status');
+      if (status) status.textContent = 'NÃO FOI POSSÍVEL CARREGAR O THREE.JS. VERIFIQUE SUA CONEXÃO E ATUALIZE A PÁGINA.';
+    });
+    setTimeout(() => {
+      const loading = document.getElementById('loading-screen');
+      if (loading && !loading.classList.contains('done')) {
+        document.getElementById('loading-status').textContent =
+          'CARREGAMENTO DEMORADO. VERIFIQUE A CONEXÃO COM O THREE.JS E RECARREGUE A PÁGINA.';
+      }
+    }, 12000);
+  </script>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>
