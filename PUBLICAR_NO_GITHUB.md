@@ -1,17 +1,15 @@
-# Publicação no GitHub Pages — Operação Eclipse 0.6.0
+# Publicar Operação Eclipse v0.7.0 no GitHub Pages
 
-1. Extraia o ZIP.
-2. Envie os arquivos e pastas internos para a raiz do repositório GitHub. A estrutura deve manter `index.html`, `src/`, `assets/` e `.github/workflows/deploy.yml` na raiz.
-3. No GitHub, abra **Settings → Pages**.
-4. Em **Build and deployment**, selecione **GitHub Actions** como Source.
-5. Faça push para `main` ou execute manualmente o workflow **Publicar Operação Eclipse no GitHub Pages** na aba Actions.
-6. Aguarde a conclusão do workflow e abra o endereço publicado indicado pelo GitHub.
+1. Extraia o conteúdo deste pacote.
+2. Envie todos os arquivos e pastas para a raiz do repositório, incluindo `.github/workflows/deploy.yml` e `.nojekyll`.
+3. No GitHub, abra **Settings → Pages** e selecione **GitHub Actions** como fonte.
+4. Faça push na branch `main` ou execute manualmente o workflow **Publicar Operação Eclipse no GitHub Pages**.
+5. Acompanhe **Actions** até o job `deploy` terminar.
 
-## Atualizar uma publicação existente
-Substitua os arquivos da versão anterior pelos arquivos desta versão e envie o commit para `main`. Não coloque o conteúdo dentro de uma subpasta: `index.html` precisa ficar na raiz do repositório.
+O projeto é estático e usa Three.js 0.169.0 via CDN; a página precisa de internet para baixar a biblioteca. Não há etapa de build.
 
-## Executar localmente
-Na raiz do projeto, execute `python -m http.server 8000` e acesse `http://localhost:8000`. Não abra `index.html` diretamente via `file://`.
+## Teste local
+Na raiz do projeto: `python -m http.server 8000`; abra `http://localhost:8000`.
 
-## Dependências externas
-Three.js 0.169.0 é carregado por import map da CDN jsDelivr. Portanto, o primeiro carregamento precisa de internet.
+## Verificações
+Execute `node --check src/main.js` e `node tests/smoke.cjs`. O smoke test é simulado e não substitui teste gráfico em navegador real.

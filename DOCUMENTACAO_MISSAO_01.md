@@ -1,43 +1,24 @@
-# Missão 01 — Cinzas na Estrada · Build 0.6.0
+# Documentação técnica — Missão 01 · v0.7.0
 
-## Objetivo narrativo
-Resgatar o operador de rádio do comboio aliado destruído e alcançar o posto avançado Nébula.
+## Animação esquelética
+Os personagens são construídos proceduralmente com `THREE.Bone` e `THREE.Skeleton`. Malhas rígidas ficam parentadas aos ossos para permitir articulação econômica, sem skinning deformável. O rig contém pelvis, spine, neck, head, shoulders, elbows, wrists, hips e knees.
 
-## Etapas
-1. Avançar pela estrada até a área do comboio.
-2. Sobreviver à primeira emboscada: dois Errantes de combate próximo e um Soldado Corrompido armado com fuzil.
-3. Localizar e resgatar o operador no abrigo improvisado.
-4. Escoltar o operador até a aproximação do posto.
-5. Defender o posto contra um Soldado Corrompido armado, um Errante e um Rastejador.
-6. Atravessar o portão aberto e concluir a missão.
+Estados animados: idle/search, caminhada/avanço, corrida, windup/ataque, aiming, reload, stagger e dead. O Rastejador recebe amplitude maior e cadência mais rápida. O Soldado Corrompido mantém os braços no fuzil, com pequenas variações de recuo e recarga.
 
-## Soldado Corrompido — comportamento
-- Modelo humanoide procedural 3D com capacete, uniforme deteriorado e fuzil visível.
-- Mantém uma distância de combate de aproximadamente 8 a 19 metros quando consegue ver Raul.
-- Prepara a mira antes de atirar; o aviso na tela permite esquiva ou busca de cobertura.
-- Usa traçantes e clarão de disparo. Os tiros são bloqueados por obstáculos registrados no cenário.
-- Dano e precisão variam com a dificuldade selecionada.
-- Carregador de 5 disparos e reserva de 20; a recarga cria uma janela para o jogador avançar.
-- Quando sua vida cai abaixo de 55%, procura uma posição atrás de obstáculos cadastrados como cobertura, se houver uma rota viável.
-- Mantido em 3D à distância para preservar a silhueta e a leitura do fuzil.
+## Armas e mãos
+Fuzil e pistola têm peças de acabamento adicionais. Mãos de primeira pessoa usam manga, punho, palma e dedos segmentados, parentados ao grupo da arma para acompanhar ADS, sway, recarga e recuo.
 
-## Sistemas cobertos pelos testes automatizados
-- Menu, briefing, opções e estado de campanha.
-- Duas armas do jogador com munições independentes, disparo e recarga.
-- Soldado Corrompido armado: modelo/arma, preparação de mira, disparo, traçante, dano, esquiva e recarga.
-- Granadas, golpe corpo a corpo, lanterna e HUD.
-- Grade de navegação e busca A* para desvio de obstáculos.
-- Percepção simplificada por visão e eventos sonoros.
-- Escolta com rota, checkpoints e compatibilidade com saves legados.
-- Defesa final, abertura do portão e tela de conclusão.
+## Materiais
+`surfaceMat()` gera mapas canvas de cor, roughness e bump para superfícies de pintura, metal, madeira, lona, pedra, reboco, areia e borracha. Não há dependência de imagens remotas.
 
-## Validação visual manual pendente
-- Confirmar alinhamento visual das mãos com o fuzil em diferentes ângulos.
-- Conferir leitura do aviso de mira e do clarão de disparo em 16:9 e 16:10.
-- Verificar se o soldado realmente se posiciona atrás de caminhões/barricadas no navegador real.
-- Testar se os tiros são bloqueados por cada tipo de cobertura.
-- Avaliar equilíbrio de dano e precisão nas quatro dificuldades.
-- Medir desempenho WebGL em hardware de entrada.
+## Explosões e iluminação
+`spawnVolumetricExplosion()` cria sprites billboard de fumaça/fogo, esfera translúcida, anel horizontal e luz pontual com decaimento. A iluminação usa preenchimento frio, luzes quentes de incêndio e cones translúcidos para sugerir feixes atmosféricos. São técnicas aproximadas e leves para navegador.
+
+## Áudio
+Após o primeiro gesto do jogador, `initAudio()` inicia WebAudio com vento em loop, rumble grave e ruído Janus. `updateAmbientAudio()` ajusta as camadas por estado da missão e agenda artilharia distante. Disparos inimigos usam panorama estéreo. Não são usados arquivos de áudio externos.
 
 ## Limitações
-A navegação é uma grade 2D, não uma navmesh completa. A percepção e a seleção de cobertura usam a lista de objetos registrados como cobertura; objetos decorativos não registrados podem não bloquear visão nem servir de abrigo. O fuzil e as animações do soldado são procedurais e ainda não substituem um modelo rigado com animação esquelética.
+- O rig é articulado por ossos com meshes rígidas; não há deformação de pele/roupa por skinning.
+- Explosões são impostores 2D e malhas transparentes em camadas, não volume físico ou raymarching.
+- Áudio sintetizado não substitui efeitos gravados e mixagem final.
+- A renderização e o áudio devem ser testados em Chrome/Firefox/Edge com WebGL e WebAudio reais.

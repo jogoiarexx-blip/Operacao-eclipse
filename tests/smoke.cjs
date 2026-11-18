@@ -45,6 +45,8 @@ class Obj {
   getWorldDirection(v) { v.set(0,0,-1);return v; }
 }
 class Mesh extends Obj { constructor(g,m) { super(g,m);this.isMesh=true; } }
+class Bone extends Obj { constructor(){super();this.isBone=true;this.name='';} }
+class Skeleton { constructor(bones=[]){this.bones=bones;this.boneInverses=[];} update(){} }
 class Sprite extends Obj {constructor(material){super(null,material)}}
 class Material { constructor(o={}) { Object.assign(this,o);this.color={multiplyScalar(){},setHex(){}};this.emissive={setHex(){}}; } clone(){return new Material(this);} dispose(){} }
 class Geo { constructor(){this.type=this.constructor.name;} setFromPoints(){return this;} setAttribute(name,value){this.attributes??={};this.attributes[name]=value;} setDrawRange(start,count){this.drawCount=count;} dispose(){} }
@@ -55,12 +57,12 @@ class Light extends Obj {constructor(){super();this.shadow={mapSize:{set(){}},ca
 let mockRayHits=[];
 class Raycaster {set(){} intersectObjects(){return mockRayHits;} }
 const THREE = {
-  Scene:Obj, Group:Obj, Mesh, Sprite, Points:Mesh, Line:Mesh,
+  Scene:Obj, Group:Obj, Mesh, Sprite, Bone, Skeleton, Points:Mesh, Line:Mesh,
   Color:class{}, FogExp2:class{}, PerspectiveCamera:Obj, WebGLRenderer:Renderer, Clock:class{getDelta(){return .016}}, Raycaster,
   Vector2:Vector, Vector3:Vector, HemisphereLight:Light, DirectionalLight:Light, PointLight:Light, SpotLight:class extends Light{constructor(){super();this.target=new Obj();}},
   MeshStandardMaterial:Material, MeshBasicMaterial:Material, ShaderMaterial:Material, SpriteMaterial:Material, PointsMaterial:Material, LineBasicMaterial:Material,
   CanvasTexture, BufferGeometry:BufferGeo, BufferAttribute:class{constructor(array,size){this.array=array;this.itemSize=size;this.needsUpdate=false;}}, InstancedMesh:class extends Mesh{constructor(g,m,n){super(g,m);this.count=n;this.instanceMatrix={needsUpdate:false};}setMatrixAt(){}}, Object3D:Obj,
-  RepeatWrapping:1, BackSide:1, DoubleSide:2, SRGBColorSpace:'sRGB',ACESFilmicToneMapping:'aces',PCFSoftShadowMap:'pcf'
+  RepeatWrapping:1, BackSide:1, DoubleSide:2, AdditiveBlending:3, NormalBlending:4, NoColorSpace:'none', SRGBColorSpace:'sRGB',ACESFilmicToneMapping:'aces',PCFSoftShadowMap:'pcf'
 };
 for(const name of ['BoxGeometry','CylinderGeometry','CircleGeometry','ConeGeometry','DodecahedronGeometry','PlaneGeometry','TorusGeometry','SphereGeometry','CapsuleGeometry','OctahedronGeometry','TetrahedronGeometry']) THREE[name]=Geo;
 const elements=new Map();
@@ -76,7 +78,12 @@ function element(id) {
 }
 const document={getElementById:element,createElement:()=>element('canvas-dynamic-'+Math.random()),addEventListener(){},pointerLockElement:null};
 const localStorage={store:{},getItem(k){return this.store[k]??null},setItem(k,v){this.store[k]=v},removeItem(k){delete this.store[k]}};
-const window={innerWidth:1280,innerHeight:720,devicePixelRatio:1,addEventListener(){},confirm:()=>true};
+
+class AudioParamMock { constructor(){this.value=0;} setValueAtTime(v){this.value=v;} exponentialRampToValueAtTime(v){this.value=v;} linearRampToValueAtTime(v){this.value=v;} setTargetAtTime(v){this.value=v;} }
+class AudioNodeMock { constructor(){this.gain=new AudioParamMock();this.frequency=new AudioParamMock();this.pan=new AudioParamMock();this.Q=new AudioParamMock();this.connections=[];this.loop=false;} connect(n){this.connections.push(n);return n;} start(){} stop(){} }
+class AudioContextMock { constructor(){this.sampleRate=8000;this.currentTime=1;this.state='running';this.destination=new AudioNodeMock();} createBuffer(ch,n){return {getChannelData(){return new Float32Array(n)}};} createGain(){return new AudioNodeMock();} createBufferSource(){return new AudioNodeMock();} createBiquadFilter(){return new AudioNodeMock();} createOscillator(){return new AudioNodeMock();} createStereoPanner(){return new AudioNodeMock();} resume(){this.state='running';} }
+
+const window={innerWidth:1280,innerHeight:720,devicePixelRatio:1,addEventListener(){},confirm:()=>true,AudioContext:AudioContextMock};
 const context=vm.createContext({THREE,document,window,localStorage,console,Math,performance:{now:()=>1000},requestAnimationFrame(){},setTimeout(){},Image:class{},setMockRayHits(hits){mockRayHits=hits;}});
 const js=source.replace(/^import \* as THREE from 'three';\s*/,'');
 vm.runInContext(js,context,{filename:'main.js'});
@@ -228,4 +235,28 @@ assert.equal(evalGame('enemies.filter(e=>e.alive && e.type==="soldado_corrompido
 evalGame('savedGame.version=2; updateContinueButton()');
 assert.equal(element('continue-btn').disabled,false);
 
-console.log('OK v0.6: menu, A*, percepção, 2 armas do jogador, soldado corrompido armado, mira inimiga, disparos, dano, traçantes, esquiva e recarga inimiga, granadas, combate, resgate, escolta, defesa, portão, conclusão e saves legados.');
+
+// v0.7 — rig esquelético, mãos do viewmodel, materiais procedurais e explosões em camadas.
+assert.ok(evalGame('enemies[0].skeleton && enemies[0].skeleton.bones.length >= 14'), 'inimigos devem possuir rig com ossos nomeados');
+assert.ok(evalGame('enemies[0].rig.spine && enemies[0].rig.headBone && enemies[0].rig.knees.length===2'), 'rig deve conter coluna, cabeça e joelhos');
+assert.ok(evalGame('weaponGroup.userData.viewRig.arms.length===2 && pistolGroup.userData.viewRig.arms.length===2'), 'armas do jogador devem incluir braços e mãos articulados');
+assert.ok(evalGame('weaponGroup.children.some(o=>o.isBone) && weaponGroup.userData.skeleton.bones.length===4'), 'mãos do fuzil devem usar esqueleto de braços e punhos');
+evalGame('var rigEnemy=enemies[0]; rigEnemy.group.position.set(0,0,8); rigEnemy.lastSeenAt=elapsedMission; rigEnemy.lastKnownX=player.position.x; rigEnemy.lastKnownZ=player.position.z; updateEnemies(.08)');
+assert.ok(evalGame('enemies[0].skeleton.bones.some(b=>b.name.startsWith("hip_"))'), 'animação deve manter ossos de quadril');
+assert.ok(evalGame('enemies[0].animationMode === \"run\" || enemies[0].animationMode === \"walk\"'), 'inimigos devem selecionar uma marcha animada');
+assert.ok(evalGame('surfaceMat("test-painted",0x445544,"painted").map && surfaceMat("test-painted",0x445544,"painted").roughnessMap && surfaceMat("test-painted",0x445544,"painted").bumpMap'), 'materiais devem ter mapas de cor, rugosidade e relevo');
+evalGame("var mockGrenade={mesh:{position:new THREE.Vector3(1,.2,2)}}; spawnVolumetricExplosion(mockGrenade.mesh.position,1)");
+assert.ok(evalGame('effects.some(e=>e.type==="volumetricExplosion" && e.sprites.length>=4 && e.light)'), 'explosão deve ter sprites volumétricos e luz dinâmica');
+evalGame('updateEffects(.25)');
+assert.ok(evalGame('effects.some(e=>e.type==="volumetricExplosion" && e.life<.95)'), 'explosão deve evoluir com o tempo');
+
+
+// WebAudio ambiental: inicia somente após o gesto de jogo e reduz o ambiente fora da missão.
+evalGame('initAudio()');
+assert.ok(evalGame('ambientNodes && ambientNodes.wind.loop && ambientNodes.rumble && ambientNoiseBuffer'), 'áudio deve iniciar camadas contínuas de vento e rumble');
+evalGame('state="playing"; updateAmbientAudio(.016); playDistantArtillery(); playRadioStatic(); playShotSound(new THREE.Vector3(4,0,-8))');
+assert.ok(evalGame('ambientNodes.master.gain.value > 0'), 'volume ambiente deve acompanhar a configuração');
+evalGame('state="paused"; updateAmbientAudio(.016)');
+assert.ok(evalGame('ambientNodes.windGain.gain.value < .08'), 'ambiente deve baixar quando o jogo está pausado');
+
+console.log('OK v0.7: rig esquelético, mãos articuladas, materiais procedurais, explosões em camadas e regressão da campanha.');

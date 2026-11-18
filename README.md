@@ -1,8 +1,19 @@
 # OPERAÇÃO ECLIPSE — A Guerra dos Esquecidos
 
-**Build 0.6.0 · Missão 01: Cinzas na Estrada · preparada para GitHub Pages**
+**Build 0.7.0 · Missão 01: Cinzas na Estrada · preparada para GitHub Pages**
 
 Protótipo de FPS de campanha para navegador em JavaScript + Three.js 0.169.0, baseado no `GDD_REFERENCIA.md`. A missão 01 inclui investigação do comboio, emboscada, resgate, escolta, defesa do posto, extração e tela de conclusão.
+
+## Novidades da versão 0.7.0
+
+### Animação e apresentação
+- Rig esquelético procedural com ossos nomeados e animações de caminhada, corrida, ataque, mira, recarga, impacto e morte.
+- Operador de rádio animado por ossos durante a escolta.
+- Mãos do jogador em primeira pessoa com mangas, luvas e dedos segmentados; armas com novos detalhes geométricos.
+- Explosões volumétricas em camadas com sprites, esfera de energia, onda de choque e luz dinâmica.
+- Iluminação cinematográfica com preenchimento frio, fogo quente, feixes atmosféricos e flicker.
+- Texturas procedurais para pintura, metal oxidado, lona, madeira, pedra, reboco, areia e borracha, com mapas de rugosidade e relevo.
+- Áudio ambiental WebAudio: vento, rumble, interferência Janus, artilharia distante, estática de rádio e disparos com panorama estéreo.
 
 ## Novidades da versão 0.6.0
 
@@ -80,7 +91,7 @@ node tests/smoke.cjs
 O smoke test usa simulador mínimo de Three.js/DOM. Ele verifica lógica, não renderiza WebGL. Faça também os testes manuais em `TESTES_MANUAIS.md`.
 
 ## Limitações conhecidas
-- Modelos e animações ainda são procedurais e provisórios; o fuzil do Soldado Corrompido é uma composição de geometria 3D.
+- Modelos, rigs e animações são procedurais e estilizados; não há captura de movimento nem modelos externos GLB nesta build. As explosões volumétricas são sprites e malhas em camadas, não raymarching volumétrico. O áudio ambiente é sintetizado via WebAudio, sem gravações de campo.
 - A navegação A* é uma grade 2D simplificada baseada em colisores circulares; não substitui uma navmesh 3D.
 - A percepção usa linha de visão dos objetos registrados como cobertura e ruído simplificado. A busca de cobertura do Soldado Corrompido depende dos obstáculos com colisores cadastrados.
 - A campanha 02–12 ainda não está implementada.

@@ -82,3 +82,11 @@
 .noise-status[data-level="alto"] i em,.noise-status[data-level="muito-alto"] i em{background:#c76e5c;box-shadow:0 0 6px #a83f36}
 @media(max-width:760px){.noise-status{top:19%;right:2%;gap:5px;padding:5px 7px;font-size:7px}.noise-status b{font-size:8px;min-width:48px}}
 @media(prefers-reduced-motion:reduce){.crosshair i{transition:none}}
+
+
+/* 0.7 — apresentação cinematográfica, leitura de arma e feedback de áudio. */
+#game-canvas{filter:saturate(.88) contrast(1.045)}
+#vignette{background:radial-gradient(ellipse at 50% 48%,transparent 18%,rgba(0,0,0,.23) 68%,rgba(0,0,0,.68) 100%)}
+#film-grain{opacity:.09;mix-blend-mode:soft-light}
+.hud .objective-box{backdrop-filter:blur(3px)}
+@media(prefers-reduced-motion:reduce){#game-canvas{filter:none}#film-grain{opacity:.04}}
