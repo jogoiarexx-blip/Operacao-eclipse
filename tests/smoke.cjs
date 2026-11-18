@@ -52,7 +52,8 @@ class BufferGeo extends Geo {}
 class CanvasTexture { constructor(c){this.canvas=c;this.repeat={set(){}};} }
 class Renderer { constructor(){this.shadowMap={};this.info={render:{calls:0,triangles:0}};this.capabilities={getMaxAnisotropy:()=>4};} setPixelRatio(){}setSize(){}render(){} }
 class Light extends Obj {constructor(){super();this.shadow={mapSize:{set(){}},camera:{}};this.target=new Obj();} }
-class Raycaster {set(){} intersectObjects(){return [];} }
+let mockRayHits=[];
+class Raycaster {set(){} intersectObjects(){return mockRayHits;} }
 const THREE = {
   Scene:Obj, Group:Obj, Mesh, Sprite, Points:Mesh, Line:Mesh,
   Color:class{}, FogExp2:class{}, PerspectiveCamera:Obj, WebGLRenderer:Renderer, Clock:class{getDelta(){return .016}}, Raycaster,
@@ -76,7 +77,7 @@ function element(id) {
 const document={getElementById:element,createElement:()=>element('canvas-dynamic-'+Math.random()),addEventListener(){},pointerLockElement:null};
 const localStorage={store:{},getItem(k){return this.store[k]??null},setItem(k,v){this.store[k]=v},removeItem(k){delete this.store[k]}};
 const window={innerWidth:1280,innerHeight:720,devicePixelRatio:1,addEventListener(){},confirm:()=>true};
-const context=vm.createContext({THREE,document,window,localStorage,console,Math,performance:{now:()=>1000},requestAnimationFrame(){},setTimeout(){},Image:class{}});
+const context=vm.createContext({THREE,document,window,localStorage,console,Math,performance:{now:()=>1000},requestAnimationFrame(){},setTimeout(){},Image:class{},setMockRayHits(hits){mockRayHits=hits;}});
 const js=source.replace(/^import \* as THREE from 'three';\s*/,'');
 vm.runInContext(js,context,{filename:'main.js'});
 const evalGame = expression=>vm.runInContext(expression,context);
@@ -97,10 +98,37 @@ evalGame('newCampaign()');
 assert.equal(evalGame('missionPhase'),0);
 evalGame('triggerAmbush()');
 assert.equal(evalGame('enemies.length'),3);
+assert.equal(evalGame('enemies.filter(e=>e.type==="soldado_corrompido").length'),1,'primeira emboscada deve incluir um inimigo armado');
+assert.ok(evalGame('enemies.find(e=>e.type==="soldado_corrompido").weaponGroup'),'soldado corrompido deve carregar um fuzil 3D');
 assert.equal(evalGame('enemies.every(e=>!enemyBlocked(e.group.position.x,e.group.position.z,.45))'),true,'spawn da primeira emboscada fora dos obstáculos');
 evalGame('state="playing"; pointerLocked=true; updateGame(.016); shoot()');
 assert.equal(evalGame('noiseEvent.type'),'gunshot','disparo deve gerar evento sonoro');
 assert.ok(evalGame('crosshairSpread') > 5,'disparo deve abrir a mira dinâmica');
+// O soldado corrompido deve mirar, disparar, criar um traçante e causar dano ao jogador.
+evalGame("var armedEnemy=enemies.find(e=>e.type==='soldado_corrompido'); armedEnemy.group.position.set(0,0,10); armedEnemy.group.rotation.y=0; armedEnemy.fireCooldown=0; armedEnemy.rangedAccuracy=1; player.position.set(0,1.7,0); updateEnemies(.016)");
+assert.equal(evalGame('armedEnemy.state'),'aiming','soldado deve preparar a mira antes do disparo');
+evalGame('armedEnemy.aimTime=.01; health=100; updateEnemies(.016)');
+assert.equal(evalGame('armedEnemy.state'),'recover','soldado deve entrar em recuperação depois de atirar');
+assert.equal(evalGame('health'),92,'tiro do soldado deve causar dano quando o jogador não se esquiva');
+assert.ok(evalGame('effects.some(effect=>effect.type==="enemyTracer")'),'tiro inimigo deve produzir traçante visível');
+assert.ok(evalGame('armedEnemy.weaponFlash.visible'),'fuzil inimigo deve produzir clarão de disparo');
+// Esquiva: sair da linha de tiro durante a preparação deve evitar o dano.
+evalGame('player.position.set(5,1.7,0); health=100; armedEnemy.aimTargetX=0; armedEnemy.aimTargetY=1.15; armedEnemy.aimTargetZ=0; armedEnemy.weaponAmmo=5; fireEnemyWeapon(armedEnemy)');
+assert.equal(evalGame('health'),100,'jogador que sai da linha de tiro deve evitar o disparo');
+// O soldado usa carregador finito e precisa recarregar antes de voltar a atirar.
+evalGame('armedEnemy.weaponAmmo=1; armedEnemy.weaponReserve=5; fireEnemyWeapon(armedEnemy); fireEnemyWeapon(armedEnemy)');
+assert.equal(evalGame('armedEnemy.state'),'reloading','soldado sem munição deve iniciar recarga');
+evalGame('updateEnemies(1.6)');
+assert.equal(evalGame('armedEnemy.weaponAmmo'),5,'recarga inimiga deve repor o carregador');
+assert.equal(evalGame('armedEnemy.weaponReserve'),0,'recarga inimiga deve consumir a reserva');
+// Um obstáculo entre o fuzil e Raul bloqueia o disparo.
+evalGame("player.position.set(0,1.7,0); armedEnemy.group.position.set(0,0,10); armedEnemy.group.rotation.y=0; armedEnemy.aimTargetX=0; armedEnemy.aimTargetY=1.15; armedEnemy.aimTargetZ=0; armedEnemy.weaponAmmo=5; health=100; setMockRayHits([{distance:1}]); fireEnemyWeapon(armedEnemy)");
+assert.equal(evalGame('health'),100,'cobertura deve bloquear o tiro inimigo');
+evalGame('setMockRayHits([])');
+// A seleção de cobertura deve encontrar o lado oposto de um obstáculo em relação ao jogador.
+evalGame("var savedColliders=colliders; colliders=[{x:0,z:3,r:1,disabled:false}]; setMockRayHits([{distance:1}])");
+assert.ok(evalGame('findEnemyCoverPosition(armedEnemy)'),'soldado ferido deve conseguir selecionar uma posição de cobertura');
+evalGame('setMockRayHits([]); colliders=savedColliders; player.position.set(0,1.7,28)');
 evalGame("emitNoise(100,'gunshot'); emitNoise(2.8,'crouch'); updateEnemies(.016)");
 assert.ok(evalGame('enemies.every(e=>e.lastHeardAt >= 0)'),'inimigos devem investigar ruído mesmo sem linha de visão');
 assert.equal(evalGame('ammo'),7);
@@ -158,6 +186,7 @@ evalGame('updateGame(.016)');
 evalGame('startFinalDefense(); spawnFinalWave()');
 assert.equal(evalGame('missionPhase'),4);
 assert.equal(evalGame('enemies.filter(e=>e.alive).length'),3);
+assert.equal(evalGame('enemies.filter(e=>e.alive && e.type==="soldado_corrompido").length'),1,'defesa final também deve incluir inimigo armado');
 assert.equal(evalGame('enemies.filter(e=>e.alive).every(e=>!enemyBlocked(e.group.position.x,e.group.position.z,.45))'),true,'spawn da defesa fora dos obstáculos');
 assert.equal(evalGame('canMoveTo(0,-97)'),false,'portão fechado impede atravessar');
 evalGame('var crawler=enemies.find(e=>e.type==="rastejador"); crawler.group.position.set(player.position.x,0,player.position.z+1.8); crawler.state="chase"; crawler.path=null; updateEnemies(.016)');
@@ -189,8 +218,13 @@ assert.equal(evalGame('grenades'),2,'old saves sem granadas recuperam fallback')
 assert.equal(evalGame('pistolAmmo'),12,'save antigo recupera munição da pistola');
 assert.equal(evalGame('pistolReserve'),36,'save antigo recupera reserva da pistola');
 assert.equal(evalGame('currentWeapon'),'rifle','save antigo seleciona o fuzil');
+// Checkpoints da emboscada e da defesa devem restaurar o soldado armado.
+evalGame("checkpoint={x:0,z:-20,phase:1,health:100,ammo:8,reserve:40}; loadCheckpoint()");
+assert.equal(evalGame('enemies.filter(e=>e.type==="soldado_corrompido").length'),1,'checkpoint da emboscada deve restaurar o inimigo armado');
+evalGame("checkpoint={x:0,z:-80,phase:4,health:100,ammo:8,reserve:40,operatorRescued:true}; loadCheckpoint()");
+assert.equal(evalGame('enemies.filter(e=>e.alive && e.type==="soldado_corrompido").length'),1,'checkpoint da defesa deve restaurar o inimigo armado');
 // Salvos das versões 0.2 e 0.3 continuam disponíveis.
 evalGame('savedGame.version=2; updateContinueButton()');
 assert.equal(element('continue-btn').disabled,false);
 
-console.log('OK v0.5: menu, grade A*, rota em torno de obstáculos, percepção por ruído, 2 armas, tiro, mira dinâmica, recarga, combate, granadas, corpo a corpo, 6 inimigos, resgate, escolta, defesa, portão, conclusão e saves legados.');
+console.log('OK v0.6: menu, A*, percepção, 2 armas do jogador, soldado corrompido armado, mira inimiga, disparos, dano, traçantes, esquiva e recarga inimiga, granadas, combate, resgate, escolta, defesa, portão, conclusão e saves legados.');

@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 0.6.0 — Soldados inimigos armados (18/11/2026)
+
+- Novo arquétipo Soldado Corrompido com fuzil 3D visível, capacete, uniforme deteriorado e olhos/núcleo violeta.
+- Um Soldado Corrompido participa da primeira emboscada e outro da defesa do posto; Errantes e Rastejador permanecem como inimigos de combate próximo.
+- IA de combate à distância: mantém distância, prepara a mira, avisa o jogador, dispara e entra em recuperação.
+- Disparos inimigos com traçantes, clarão no cano, dano e verificação de obstáculos para bloquear tiros através de cobertura.
+- Carregador de cinco tiros e reserva de vinte cartuchos, com recarga temporizada.
+- Soldado ferido tenta buscar cobertura em posições atrás de obstáculos cadastrados.
+- O soldado permanece em 3D a longa distância para manter o fuzil visível.
+- Checkpoints da emboscada e da defesa restauram corretamente o novo tipo de inimigo.
+- Smoke tests ampliados para mira inimiga, dano, esquiva, traçante e recarga.
+
 ## 0.5.0 — IA tática, navegação e leitura de combate (18/11/2026)
 
 - Navegação A* em grade estática para Errantes, Rastejador e operador de rádio, com rotas suavizadas e atualização em baixa frequência.

@@ -1,4 +1,4 @@
-# Publicação no GitHub Pages — Operação Eclipse 0.5.0
+# Publicação no GitHub Pages — Operação Eclipse 0.6.0
 
 1. Extraia o ZIP.
 2. Envie os arquivos e pastas internos para a raiz do repositório GitHub. A estrutura deve manter `index.html`, `src/`, `assets/` e `.github/workflows/deploy.yml` na raiz.

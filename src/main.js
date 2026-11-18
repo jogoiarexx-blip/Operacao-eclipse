@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-// OPERAÇÃO ECLIPSE — Missão 01 aprimorada, build 0.5.0 para GitHub Pages.
+// OPERAÇÃO ECLIPSE — Missão 01 aprimorada, build 0.6.0 para GitHub Pages.
 // Simulação, navegação e apresentação permanecem desacopladas para facilitar a expansão da campanha.
 
 const $ = (id) => document.getElementById(id);
@@ -1010,31 +1010,61 @@ function createEnemy(x, z, index, type = 'errante') {
   const spawn = findClearSpawn(x, z); x = spawn.x; z = spawn.z;
   const group = new THREE.Group(); group.position.set(x, 0, z); scene.add(group);
   if (type === 'rastejador') group.scale.set(.9, .62, 1.1);
-  const flesh = new THREE.MeshStandardMaterial({ color: 0x373b36, roughness: .96 });
-  const torn = new THREE.MeshStandardMaterial({ color: 0x252b29, roughness: 1 });
+  const armed = type === 'soldado_corrompido';
+  const flesh = new THREE.MeshStandardMaterial({ color: armed ? 0x4b5147 : 0x373b36, roughness: .96 });
+  const torn = new THREE.MeshStandardMaterial({ color: armed ? 0x30382f : 0x252b29, roughness: 1 });
   const violet = new THREE.MeshStandardMaterial({ color: 0x8f59c6, emissive: 0x54227d, emissiveIntensity: 1.7, roughness: .35 });
   const bone = new THREE.MeshStandardMaterial({ color: 0x777466, roughness: .9 });
   const body = addMesh(new THREE.CapsuleGeometry(.34, .72, 3, 6), flesh, group, 0, 1.05, 0); body.rotation.x = -.12;
   const chest = addMesh(new THREE.DodecahedronGeometry(.37, 0), torn, group, 0, 1.28, -.05); chest.scale.set(1, 1.25, .72);
   const head = addMesh(new THREE.SphereGeometry(.25, 7, 6), flesh, group, 0, 1.83, -.05); head.scale.set(.8, 1.15, .85); head.userData.part = 'head';
-  const arms = [], legs = [];
+  const arms = [], hands = [], legs = [];
   for (const side of [-1, 1]) {
     const eye = addMesh(new THREE.SphereGeometry(.055, 6, 5), violet, group, side * .105, 1.88, -.27); eye.userData.part = 'eye';
     const arm = addCylinder(group, side * .42, 1.05, -.02, .12, .17, .88, flesh, 6, 0, side * -.17); arm.rotation.z = side * -.12; arms.push(arm);
-    const hand = addMesh(new THREE.DodecahedronGeometry(.14, 0), bone, group, side * .48, .57, -.12);
+    const hand = addMesh(new THREE.DodecahedronGeometry(.14, 0), bone, group, side * .48, .57, -.12); hands.push(hand);
     const leg = addCylinder(group, side * .18, .38, .02, .14, .19, .72, torn, 6, 0, side * .08);
     leg.rotation.z = side * .07; legs.push(leg);
   }
   const core = addMesh(new THREE.SphereGeometry(.12, 7, 6), violet, group, 0, 1.2, -.34);
+  let enemyWeapon = null, weaponMuzzle = null, weaponFlash = null, weaponLight = null, helmet = null;
+  if (armed) {
+    // Uniforme militar corrompido, capacete e fuzil de ferrolho estilizado, sempre visíveis no modelo 3D.
+    helmet = addMesh(new THREE.SphereGeometry(.28, 9, 7), mat('enemy-helmet', 0x353c34, .82, .18), group, 0, 2.02, -.035);
+    helmet.scale.set(1.02, .55, .94);
+    addBox(group, 0, 1.91, -.23, .34, .09, .2, mat('enemy-mask', 0x252a27, .95));
+    addBox(group, 0, 1.38, .12, .55, .5, .22, mat('enemy-pack', 0x343a30, .98));
+    // Braços erguidos para sustentar a arma; as mãos são reposicionadas no guarda-mão e na empunhadura.
+    arms.forEach((arm, i) => { arm.rotation.x = -1.02; arm.rotation.z = i === 0 ? -.2 : .2; });
+    hands.forEach((hand, i) => hand.position.set(i === 0 ? -.16 : .16, 1.19, -.62));
+    enemyWeapon = new THREE.Group(); group.add(enemyWeapon); enemyWeapon.position.set(0, 1.25, -.42);
+    const gunMetal = mat('enemy-gun-metal', 0x343a39, .42, .72);
+    const gunWood = mat('enemy-gun-wood', 0x51412e, .78, .08);
+    addBox(enemyWeapon, 0, -.015, .16, .13, .13, .42, gunWood);
+    addBox(enemyWeapon, 0, .015, -.09, .15, .14, .35, gunMetal);
+    addBox(enemyWeapon, 0, -.105, -.09, .075, .12, .14, gunMetal);
+    addBox(enemyWeapon, 0, .005, -.38, .055, .055, .36, gunMetal);
+    addCylinder(enemyWeapon, 0, .015, -.61, .025, .025, .22, gunMetal, 7, Math.PI / 2);
+    addBox(enemyWeapon, 0, .11, -.12, .035, .035, .24, gunMetal);
+    weaponMuzzle = new THREE.Vector3(0, 1.265, -1.14);
+    weaponFlash = addMesh(new THREE.SphereGeometry(.075, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffc06a, transparent: true, opacity: .95 }), enemyWeapon, 0, .015, -.73);
+    weaponFlash.visible = false;
+    weaponLight = new THREE.PointLight(0xffa34f, 0, 3.2); weaponLight.position.set(0, .015, -.75); enemyWeapon.add(weaponLight);
+  }
   const aura = new THREE.PointLight(0x8b49b9, .8, 3.2); aura.position.set(0, 1.4, -.2); group.add(aura);
   const shadow = addMesh(new THREE.CircleGeometry(.65, 12), new THREE.MeshBasicMaterial({ color: 0x171a17, transparent: true, opacity: .35, depthWrite: false }), group, 0, .015, 0); shadow.rotation.x = -Math.PI / 2;
   const stats = enemyStats(type);
-  const enemy = { group, type, x, z, health: stats.health, speed: stats.speed, damage: stats.damage,
-    attackTimer: .7 + index * .25, windup: 0, recover: 0, alive: true,
+  const enemy = { group, type, x, z, health: stats.health, maxHealth: stats.health, speed: stats.speed, damage: stats.damage,
+    rangedDamage: stats.rangedDamage || 0, rangedAccuracy: stats.rangedAccuracy || 0, rangedRange: stats.rangedRange || 0,
+    attackTimer: .7 + index * .25, windup: 0, recover: 0, aimTime: 0, fireCooldown: 1.1 + index * .18,
+    aimTargetX: 0, aimTargetY: 1.15, aimTargetZ: 0, muzzleTime: 0,
+    weaponAmmo: armed ? 5 : 0, weaponReserve: armed ? 20 : 0, weaponReloadTime: 0, alive: true,
     hitMeshes: [body, chest, head, core], phase: Math.random() * 6, index, state: 'chase', lastAttack: 0,
-    renderMeshes: group.children.filter(obj => obj.isMesh), aura, lod: '3d', sprite: null, arms, legs, stagger: 0, attackPulse: 0, deadTime: 0,
+    renderMeshes: group.children.filter(obj => obj.isMesh), aura, lod: '3d', sprite: null, arms, hands, legs,
+    weaponGroup: enemyWeapon, weaponMuzzle, weaponFlash, weaponLight, stagger: 0, attackPulse: 0, deadTime: 0,
     lastKnownX: player.position.x, lastKnownZ: player.position.z, lastSeenAt: elapsedMission, lastHeardAt: -999, heardNoiseId: -1,
     path: null, pathIndex: 0, pathTimer: 0, pathGoal: -1, lungeTime: 0, lungeDirX: 0, lungeDirZ: 0,
+    coverTarget: null, coverCooldown: 0, coverHold: 0,
     baseScale: group.scale.clone(), deathStartX: 0, deathStartY: 0 };
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: getImpostorTexture(), transparent: true, alphaTest: .12, depthWrite: false }));
   sprite.position.set(0, 1.16, 0); sprite.scale.set(1.45, 2.25, 1); sprite.visible = false; group.add(sprite); enemy.sprite = sprite;
@@ -1044,13 +1074,18 @@ function createEnemy(x, z, index, type = 'errante') {
 }
 function enemyStats(type = 'errante') {
   const stats = {
-    recruta: { health: 45, speed: 1.35, damage: 8 },
-    soldado: { health: 58, speed: 1.65, damage: 11 },
-    veterano: { health: 72, speed: 1.9, damage: 15 },
-    pesadelo: { health: 88, speed: 2.15, damage: 19 }
+    recruta: { health: 45, speed: 1.35, damage: 8, rangedDamage: 5, rangedAccuracy: .58 },
+    soldado: { health: 58, speed: 1.65, damage: 11, rangedDamage: 8, rangedAccuracy: .72 },
+    veterano: { health: 72, speed: 1.9, damage: 15, rangedDamage: 10, rangedAccuracy: .83 },
+    pesadelo: { health: 88, speed: 2.15, damage: 19, rangedDamage: 13, rangedAccuracy: .91 }
   };
   const base = stats[settings.difficulty] || stats.soldado;
-  return type === 'rastejador' ? { health: base.health * .7, speed: base.speed * 1.55, damage: Math.round(base.damage * .8) } : base;
+  if (type === 'rastejador') return { health: base.health * .7, speed: base.speed * 1.55, damage: Math.round(base.damage * .8) };
+  if (type === 'soldado_corrompido') return {
+    health: Math.round(base.health * 1.18), speed: base.speed * .78, damage: Math.round(base.damage * .65),
+    rangedDamage: base.rangedDamage, rangedAccuracy: base.rangedAccuracy, rangedRange: 28
+  };
+  return base;
 }
 function getImpostorTexture() {
   if (impostorTexture) return impostorTexture;
@@ -1068,7 +1103,7 @@ function getImpostorTexture() {
   return impostorTexture;
 }
 function setEnemyLOD(enemy, distance) {
-  if (!enemy.alive) return;
+  if (!enemy.alive || enemy.type === 'soldado_corrompido') return; // manter o fuzil visível à distância
   if (enemy.lod === '3d' && distance > 32) {
     enemy.renderMeshes.forEach(m => m.visible = false); enemy.aura.visible = false;
     enemy.sprite.visible = true; enemy.lod = '2d';
@@ -1086,7 +1121,7 @@ function onEnemyKilled(enemy) {
   }});
   if (missionPhase === 1 && enemies.filter(e => e.alive).length === 0) {
     missionPhase = 2; updateObjective('RESGATE O OPERADOR DE RÁDIO');
-    showToast('ÁREA SEGURA', 'Os Errantes foram neutralizados. Procure o operador no abrigo.', 5);
+    showToast('ÁREA SEGURA', 'As ameaças foram neutralizadas. Procure o operador no abrigo.', 5);
     showRadio('Moretti: “Boa, Raul. O operador está junto ao abrigo improvisado. Vá buscá-lo.”', 5);
     playBeep(620, .16); captureCheckpoint(2);
   } else if (missionPhase === 4 && finalWaveSpawned && enemies.every(e => !e.alive)) {
@@ -1095,7 +1130,7 @@ function onEnemyKilled(enemy) {
     showRadio('Moretti: “A ameaça recuou! Abrindo o portão. Entre, Raul!”', 5);
     showToast('ACESSO LIBERADO', 'O portão está abrindo. Alcance a área de extração.', 5);
     captureCheckpoint(5); playBeep(750, .2);
-  } else if (missionPhase === 1) updateObjective(`ELIMINE OS ERRANTES · ${kills} / 3`);
+  } else if (missionPhase === 1) updateObjective(`ELIMINE AS AMEAÇAS · ${enemies.filter(e => !e.alive).length} / 3`);
   else if (missionPhase === 4) updateObjective(`DEFENDA O POSTO · ${enemies.filter(e => e.alive).length} AMEAÇAS`);
 }
 function startFinalDefense() {
@@ -1108,18 +1143,23 @@ function startFinalDefense() {
 }
 function spawnFinalWave() {
   finalWaveSpawned = true;
-  createEnemy(-11.4, -82, 3); createEnemy(11.4, -82, 4); createEnemy(-2.7, -92, 5, 'rastejador');
+  createEnemy(-11.4, -82, 3, 'soldado_corrompido');
+  createEnemy(11.4, -82, 4);
+  createEnemy(-2.7, -92, 5, 'rastejador');
   updateObjective('DEFENDA O POSTO · 3 AMEAÇAS');
-  showRadio('Moretti: “Rastejador à frente! Mire nas partes expostas e não deixe que o cerquem!”', 5);
+  showRadio('Moretti: “Contato armado à esquerda! Há um soldado corrompido com fuzil. Use as barricadas!”', 5.5);
+  showToast('INIMIGO ARMADO', 'O soldado está mirando. Quebre a linha de visão, use cobertura e avance entre os disparos.', 6);
   playThreatSound();
 }
 function triggerAmbush() {
   if (ambushTriggered) return;
   ambushTriggered = true; missionPhase = 1;
-  createEnemy(-9.2, -34.5, 0); createEnemy(10.0, -36.5, 1); createEnemy(-1.0, -49.0, 2);
-  updateObjective('ELIMINE OS ERRANTES · 0 / 3');
-  showToast('EMBOSCADA', 'Movimento à frente! Mire com o botão direito e dispare com o esquerdo.', 5.5);
-  showRadio('Moretti: “Raul, contato desconhecido! Há movimento entre os veículos. Proteja-se!”', 5.2);
+  createEnemy(-9.2, -34.5, 0);
+  createEnemy(10.0, -36.5, 1);
+  createEnemy(-1.0, -44.0, 2, 'soldado_corrompido');
+  updateObjective('ELIMINE AS AMEAÇAS · 0 / 3');
+  showToast('EMBOSCADA', 'Movimento à frente! Um soldado corrompido está armado. Procure cobertura e responda ao fogo.', 6);
+  showRadio('Moretti: “Raul, contato desconhecido! Há criaturas entre os veículos e um deles está armado. Proteja-se!”', 5.8);
   playBeep(190, .3);
 }
 
@@ -1214,16 +1254,16 @@ function showInfo(type) {
   infoReturnScreen = state === 'paused' ? ui.pause : ui.menu;
   const content = $('info-content');
   if (type === 'objectives') {
-    content.innerHTML = `<div class="eyebrow"><i></i> ORDEM DE OPERAÇÃO</div><h3>OBJETIVOS E CONTROLES</h3><p><b>Missão:</b> Cinzas na Estrada.</p><p><b>Etapa atual:</b> ${ui.objective.textContent}.</p><ol><li>Avançar até o comboio destruído.</li><li>Eliminar os três Errantes da emboscada.</li><li>Resgatar o operador de rádio.</li><li>Escoltar o operador até o posto avançado.</li><li>Defender o posto e atravessar o portão.</li></ol><p><b>Documento opcional:</b> ${intelFound ? 'encontrado' : 'não encontrado'}.</p><div class="control-list"><div><span>Mover</span><kbd>W A S D</kbd></div><div><span>Olhar</span><kbd>MOUSE</kbd></div><div><span>Disparar</span><kbd>CLIQUE ESQ.</kbd></div><div><span>Mirar</span><kbd>CLIQUE DIR.</kbd></div><div><span>Correr</span><kbd>SHIFT</kbd></div><div><span>Agachar</span><kbd>CTRL</kbd></div><div><span>Pular</span><kbd>ESPAÇO</kbd></div><div><span>Interagir</span><kbd>E</kbd></div><div><span>Recarregar</span><kbd>R</kbd></div><div><span>Trocar arma</span><kbd>1 / 2 / RODA</kbd></div><div><span>Granada</span><kbd>G</kbd></div><div><span>Corpo a corpo</span><kbd>F</kbd></div><div><span>Lanterna</span><kbd>Q</kbd></div><div><span>Pausar</span><kbd>ESC</kbd></div></div>`;
+    content.innerHTML = `<div class="eyebrow"><i></i> ORDEM DE OPERAÇÃO</div><h3>OBJETIVOS E CONTROLES</h3><p><b>Missão:</b> Cinzas na Estrada.</p><p><b>Etapa atual:</b> ${ui.objective.textContent}.</p><ol><li>Avançar até o comboio destruído.</li><li>Eliminar as ameaças da emboscada, incluindo o Soldado Corrompido armado.</li><li>Resgatar o operador de rádio.</li><li>Escoltar o operador até o posto avançado.</li><li>Defender o posto e atravessar o portão.</li></ol><p><b>Documento opcional:</b> ${intelFound ? 'encontrado' : 'não encontrado'}.</p><div class="control-list"><div><span>Mover</span><kbd>W A S D</kbd></div><div><span>Olhar</span><kbd>MOUSE</kbd></div><div><span>Disparar</span><kbd>CLIQUE ESQ.</kbd></div><div><span>Mirar</span><kbd>CLIQUE DIR.</kbd></div><div><span>Correr</span><kbd>SHIFT</kbd></div><div><span>Agachar</span><kbd>CTRL</kbd></div><div><span>Pular</span><kbd>ESPAÇO</kbd></div><div><span>Interagir</span><kbd>E</kbd></div><div><span>Recarregar</span><kbd>R</kbd></div><div><span>Trocar arma</span><kbd>1 / 2 / RODA</kbd></div><div><span>Granada</span><kbd>G</kbd></div><div><span>Corpo a corpo</span><kbd>F</kbd></div><div><span>Lanterna</span><kbd>Q</kbd></div><div><span>Pausar</span><kbd>ESC</kbd></div></div>`;
   } else if (type === 'arsenal') {
-    content.innerHTML = `<div class="eyebrow"><i></i> ARQUIVO DE CAMPO</div><h3>ARSENAL / BESTIÁRIO</h3><p><b>Fuzil semiautomático:</b> arma inicial de médio alcance. Carregador de 8 cartuchos, recarga manual e boa precisão quando o jogador controla o recuo.</p><p><b>Pistola de serviço:</b> arma secundária de 12 tiros, recarga rápida e menor dano. Pressione 2 ou use a roda do mouse para equipar; 1 retorna ao fuzil.</p><p><b>Errante:</b> criatura humanoide atraída por movimento e ruído. Ataca a curta distância; cabeça e núcleo violeta são vulneráveis.</p><p><b>Rastejador:</b> ameaça veloz, de silhueta baixa, encontrada perto do posto. Cuidado com o avanço rápido e a preparação do salto.</p><p><b>Equipamento:</b> granadas (G), golpe corpo a corpo (F), lanterna (Q), kit médico e caixas de munição podem ser encontrados no cenário. O arsenal completo será liberado ao longo da campanha.</p>`;
+    content.innerHTML = `<div class="eyebrow"><i></i> ARQUIVO DE CAMPO</div><h3>ARSENAL / BESTIÁRIO</h3><p><b>Fuzil semiautomático:</b> arma inicial de médio alcance. Carregador de 8 cartuchos, recarga manual e boa precisão quando o jogador controla o recuo.</p><p><b>Pistola de serviço:</b> arma secundária de 12 tiros, recarga rápida e menor dano. Pressione 2 ou use a roda do mouse para equipar; 1 retorna ao fuzil.</p><p><b>Errante:</b> criatura humanoide atraída por movimento e ruído. Ataca a curta distância; cabeça e núcleo violeta são vulneráveis.</p><p><b>Rastejador:</b> ameaça veloz, de silhueta baixa, encontrada perto do posto. Cuidado com o avanço rápido e a preparação do salto.</p><p><b>Soldado Corrompido:</b> antigo combatente tomado pelo Vazio, equipado com fuzil. Mantém distância, prepara a mira e dispara em rajadas espaçadas. Interrompa a linha de visão usando caminhões, muros e barricadas.</p><p><b>Equipamento:</b> granadas (G), golpe corpo a corpo (F), lanterna (Q), kit médico e caixas de munição podem ser encontrados no cenário. O arsenal completo será liberado ao longo da campanha.</p>`;
   } else if (type === 'controls') {
     content.innerHTML = `<div class="eyebrow"><i></i> MANUAL DO OPERADOR</div><h3>CONTROLES</h3><div class="control-list"><div><span>Mover</span><kbd>W A S D</kbd></div><div><span>Olhar</span><kbd>MOUSE</kbd></div><div><span>Disparar</span><kbd>CLIQUE ESQ.</kbd></div><div><span>Mirar</span><kbd>CLIQUE DIR.</kbd></div><div><span>Correr</span><kbd>SHIFT</kbd></div><div><span>Agachar</span><kbd>CTRL</kbd></div><div><span>Pular</span><kbd>ESPAÇO</kbd></div><div><span>Interagir</span><kbd>E</kbd></div><div><span>Recarregar</span><kbd>R</kbd></div><div><span>Trocar arma</span><kbd>1 / 2 / RODA</kbd></div><div><span>Granada</span><kbd>G</kbd></div><div><span>Corpo a corpo</span><kbd>F</kbd></div><div><span>Lanterna</span><kbd>Q</kbd></div><div><span>Pausar</span><kbd>ESC</kbd></div></div><p>O navegador solicita captura do mouse ao iniciar. Pressione ESC para abrir a pausa e liberar o cursor.</p>`;
   } else if (type === 'chapters') {
     content.innerHTML = `<div class="eyebrow"><i></i> CAMPANHA · 01 / 12</div><h3>SELEÇÃO DE CAPÍTULO</h3><p><b>01 — Cinzas na Estrada</b> · ${completedMission ? 'CONCLUÍDA' : 'NÃO CONCLUÍDA'}</p><p>02 — A Vila sem Sinos · EM DESENVOLVIMENTO</p><button id="replay-chapter" class="action-button">REJOGAR MISSÃO 01</button>`;
     $('replay-chapter').addEventListener('click', () => newCampaign());
   } else if (type === 'credits') {
-    content.innerHTML = `<div class="eyebrow"><i></i> REGISTRO DE PRODUÇÃO</div><h3>CRÉDITOS</h3><p><b>OPERAÇÃO ECLIPSE: A GUERRA DOS ESQUECIDOS</b></p><p>Projeto original de campanha FPS em Three.js. Versão jogável da Missão 01 — 0.5.0.</p><p>Direção: ficção alternativa de guerra sobrenatural. Personagens, unidade, eventos e Projeto Janus são elementos ficcionais.</p><p>Este protótipo utiliza geometria procedural e áudio sintetizado; modelos, animações e trilha definitivos ainda serão produzidos.</p>`;
+    content.innerHTML = `<div class="eyebrow"><i></i> REGISTRO DE PRODUÇÃO</div><h3>CRÉDITOS</h3><p><b>OPERAÇÃO ECLIPSE: A GUERRA DOS ESQUECIDOS</b></p><p>Projeto original de campanha FPS em Three.js. Versão jogável da Missão 01 — 0.6.0.</p><p>Direção: ficção alternativa de guerra sobrenatural. Personagens, unidade, eventos e Projeto Janus são elementos ficcionais.</p><p>Este protótipo utiliza geometria procedural e áudio sintetizado; modelos, animações e trilha definitivos ainda serão produzidos.</p>`;
   } else if (type === 'options') {
     content.innerHTML = `<div class="eyebrow"><i></i> CONFIGURAÇÃO DO SISTEMA</div><h3>OPÇÕES</h3>
       <div class="option-row"><label for="opt-volume">VOLUME GERAL</label><input id="opt-volume" type="range" min="0" max="100" value="${settings.volume}"></div>
@@ -1325,14 +1365,14 @@ function loadCheckpoint() {
   noiseEvent = null; noiseEvents = []; noiseBurstTime = 0; loudNoiseUntil = 0;
   if (escortGroup?.userData.navigation) escortGroup.userData.navigation = { path: null, pathIndex: 0, pathTimer: 0, pathGoal: -1 };
   if (missionPhase === 1) {
-    createEnemy(-9.2, -34.5, 0); createEnemy(10.0, -36.5, 1); createEnemy(-1.0, -49.0, 2);
+    createEnemy(-9.2, -34.5, 0); createEnemy(10.0, -36.5, 1); createEnemy(-1.0, -44.0, 2, 'soldado_corrompido');
     kills = 0;
   } else if (missionPhase === 4) {
     finalWaveSpawned = true;
-    createEnemy(-11.4, -82, 3); createEnemy(11.4, -82, 4); createEnemy(-2.7, -92, 5, 'rastejador');
+    createEnemy(-11.4, -82, 3, 'soldado_corrompido'); createEnemy(11.4, -82, 4); createEnemy(-2.7, -92, 5, 'rastejador');
   }
   updateObjective([
-    'AVANCE ATÉ O COMBOIO DESTRUÍDO', 'ELIMINE OS ERRANTES · 0 / 3',
+    'AVANCE ATÉ O COMBOIO DESTRUÍDO', 'ELIMINE AS AMEAÇAS · 0 / 3',
     'RESGATE O OPERADOR DE RÁDIO', 'ESCOLTE O OPERADOR ATÉ O POSTO',
     'DEFENDA O POSTO · 3 AMEAÇAS', 'ATRAVESSE O PORTÃO DO POSTO AVANÇADO'
   ][missionPhase]);
@@ -1628,7 +1668,7 @@ function updatePlayer(dt) {
   }}
   if (isReloading) { reloadTime -= dt; if (reloadTime <= 0) finishReload(); }
   if (missionPhase === 0 && player.position.z < -8) {
-    missionPhase = 1; updateObjective('ELIMINE OS ERRANTES · 0 / 3'); triggerAmbush();
+    missionPhase = 1; updateObjective('ELIMINE AS AMEAÇAS · 0 / 3'); triggerAmbush();
   }
   updateEscort(dt); updateGrenades(dt);
   if (missionPhase === 3 && player.position.z < -78 && escortGroup.position.z < -72) startFinalDefense();
@@ -1675,6 +1715,83 @@ function enemyHasLineOfSight(enemy) {
   raycaster.set(from, toward.normalize()); raycaster.far = Math.max(.01, distance - .4);
   return raycaster.intersectObjects(worldObstacles, false).length === 0;
 }
+function findEnemyCoverPosition(enemy) {
+  let best = null, bestScore = Infinity;
+  for (const collider of colliders) {
+    if (collider.disabled) continue;
+    const awayX = collider.x - player.position.x, awayZ = collider.z - player.position.z;
+    const awayLength = Math.hypot(awayX, awayZ);
+    if (awayLength < .1) continue;
+    const ux = awayX / awayLength, uz = awayZ / awayLength;
+    const x = collider.x + ux * (collider.r + 1.05);
+    const z = collider.z + uz * (collider.r + 1.05);
+    if (enemyBlocked(x, z, .36)) continue;
+    const travel = Math.hypot(x - enemy.group.position.x, z - enemy.group.position.z);
+    if (travel < 1.7 || travel > 10.5) continue;
+    const toPlayer = new THREE.Vector3(player.position.x - x, 0, player.position.z - z);
+    const distance = toPlayer.length();
+    if (distance < 3 || distance > 30) continue;
+    raycaster.set(new THREE.Vector3(x, 1.15, z), toPlayer.normalize());
+    raycaster.far = Math.max(.1, distance - .45);
+    if (!raycaster.intersectObjects(worldObstacles, false).length) continue;
+    const score = travel + distance * .035;
+    if (score < bestScore) { bestScore = score; best = { x, z }; }
+  }
+  return best;
+}
+function spawnEnemyTracer(start, end) {
+  if (effects.filter(effect => effect.type === 'enemyTracer').length >= 8) return;
+  const direction = end.clone().sub(start);
+  const length = direction.length();
+  if (length < .08) return;
+  const material = new THREE.MeshBasicMaterial({ color: 0xffc477, transparent: true, opacity: .9, depthWrite: false });
+  const beam = addMesh(new THREE.CylinderGeometry(.012, .012, length, 5), material, scene,
+    (start.x + end.x) * .5, (start.y + end.y) * .5, (start.z + end.z) * .5);
+  beam.rotation.set(Math.atan2(direction.z, direction.y), 0, -Math.atan2(direction.x, Math.hypot(direction.y, direction.z)));
+  effects.push({ type: 'enemyTracer', object: beam, life: .095 });
+}
+function fireEnemyWeapon(enemy) {
+  if (!enemy.alive || enemy.type !== 'soldado_corrompido' || !enemy.weaponGroup) return false;
+  if (enemy.weaponAmmo <= 0) {
+    if (enemy.weaponReserve > 0) {
+      enemy.state = 'reloading'; enemy.weaponReloadTime = 1.55;
+      $('threat-warning').textContent = '⚠ SOLDADO RECARREGANDO';
+      $('threat-warning').classList.remove('hidden'); warningTime = 1.55;
+    }
+    return false;
+  }
+  enemy.weaponAmmo--;
+  const start = new THREE.Vector3(0, 1.265, -1.14).applyAxisAngle(worldUp, enemy.group.rotation.y).add(enemy.group.position);
+  const aimPoint = new THREE.Vector3(enemy.aimTargetX, enemy.aimTargetY, enemy.aimTargetZ);
+  const aimDirection = aimPoint.clone().sub(start).normalize();
+  const currentBody = new THREE.Vector3(player.position.x, player.position.y - .55, player.position.z);
+  const toPlayer = currentBody.clone().sub(start);
+  const along = toPlayer.x * aimDirection.x + toPlayer.y * aimDirection.y + toPlayer.z * aimDirection.z;
+  const closest = start.clone().addScaledVector(aimDirection, Math.max(0, along));
+  const missDistance = currentBody.distanceTo(closest);
+  raycaster.set(start, aimDirection); raycaster.far = Math.min(34, Math.max(0, along));
+  const obstruction = raycaster.intersectObjects(worldObstacles, false)[0];
+  const blocked = !!obstruction && obstruction.distance < along - .35;
+  const accuracy = enemy.rangedAccuracy || .7;
+  const hitRadius = isCrouching ? .43 : .62;
+  const hit = !blocked && along > 0 && along < 34 && missDistance < hitRadius && rand() < accuracy;
+  let end;
+  if (blocked) end = start.clone().addScaledVector(aimDirection, Math.max(.1, obstruction.distance));
+  else if (hit) end = currentBody.clone();
+  else end = start.clone().addScaledVector(aimDirection, Math.min(34, Math.max(8, along)));
+  spawnEnemyTracer(start, end);
+  if (enemy.weaponFlash) enemy.weaponFlash.visible = true;
+  if (enemy.weaponLight) enemy.weaponLight.intensity = 3.8;
+  enemy.muzzleTime = .075;
+  enemy.weaponGroup.rotation.x = -.035;
+  enemy.fireCooldown = 1.8 + rand() * .55;
+  enemy.state = 'recover'; enemy.recover = .48;
+  enemy.attackPulse = .28;
+  emitNoise(46, 'enemy_gunshot', enemy.group.position.x, enemy.group.position.z);
+  playShotSound();
+  if (hit) damagePlayer(enemy.rangedDamage || 8, enemy.group.position);
+  return hit;
+}
 function updateEnemies(dt) {
   if (state !== 'playing') return;
   for (const e of enemies) {
@@ -1688,6 +1805,14 @@ function updateEnemies(dt) {
       continue;
     }
     const px = player.position.x, pz = player.position.z;
+    if (e.type === 'soldado_corrompido') {
+      e.fireCooldown = Math.max(0, e.fireCooldown - dt);
+      if (e.muzzleTime > 0) {
+        e.muzzleTime = Math.max(0, e.muzzleTime - dt);
+        if (e.muzzleTime === 0) { e.weaponFlash.visible = false; e.weaponLight.intensity = 0; }
+      }
+      if (e.weaponGroup) e.weaponGroup.rotation.x += (0 - e.weaponGroup.rotation.x) * Math.min(1, dt * 14);
+    }
     let dx = px - e.group.position.x, dz = pz - e.group.position.z;
     let distance = Math.hypot(dx, dz);
     setEnemyLOD(e, distance);
@@ -1714,14 +1839,31 @@ function updateEnemies(dt) {
     const targetZ = seesPlayer ? pz : e.lastKnownZ;
     const targetDx = targetX - e.group.position.x, targetDz = targetZ - e.group.position.z;
     const targetDistance = Math.hypot(targetDx, targetDz);
-    if (hasTarget) e.group.rotation.y = Math.atan2(targetDx, targetDz) + Math.PI;
-    else e.group.rotation.y += Math.sin(elapsedMission * 1.7 + e.phase) * dt * .55;
+    if (hasTarget && e.state !== 'aiming') e.group.rotation.y = Math.atan2(targetDx, targetDz) + Math.PI;
+    else if (!hasTarget) e.group.rotation.y += Math.sin(elapsedMission * 1.7 + e.phase) * dt * .55;
 
     const stride = Math.sin(elapsedMission * (e.type === 'rastejador' ? 13 : 8) + e.phase);
-    const movingAnim = hasTarget && targetDistance > 1.1 && e.state !== 'windup' && e.state !== 'recover';
+    const movingAnim = hasTarget && targetDistance > 1.1 && !['windup', 'recover', 'aiming', 'hold', 'cover'].includes(e.state);
     e.legs.forEach((leg, i) => { leg.rotation.x = movingAnim ? stride * (i ? -1 : 1) * .38 : 0; });
-    e.arms.forEach((arm, i) => { arm.rotation.x = e.state === 'windup' ? -.8 : movingAnim ? stride * (i ? 1 : -1) * .32 : 0; });
+    e.arms.forEach((arm, i) => {
+      arm.rotation.x = e.type === 'soldado_corrompido' ? -1.02 + (movingAnim ? stride * .045 : 0)
+        : e.state === 'windup' ? -.8 : movingAnim ? stride * (i ? 1 : -1) * .32 : 0;
+    });
+    if (e.type === 'soldado_corrompido') e.coverCooldown = Math.max(0, e.coverCooldown - dt);
     if (e.stagger > 0) { e.stagger -= dt; continue; }
+
+    if (e.type === 'soldado_corrompido' && e.state === 'aiming') {
+      e.aimTime -= dt;
+      e.aura.intensity = 1.15 + Math.sin(elapsedMission * 22) * .25;
+      if (!seesPlayer || distance > e.rangedRange + 5) {
+        e.state = 'recover'; e.recover = .35; e.aimTime = 0;
+        continue;
+      }
+      $('threat-warning').textContent = '⚠ SOLDADO CORROMPIDO MIRANDO';
+      $('threat-warning').classList.remove('hidden'); warningTime = Math.max(warningTime, .18);
+      if (e.aimTime <= 0) fireEnemyWeapon(e);
+      continue;
+    }
 
     if (e.state === 'windup') {
       e.aura.intensity = 2.5; e.windup -= dt;
@@ -1753,8 +1895,83 @@ function updateEnemies(dt) {
       }
       continue;
     }
+    if (e.type === 'soldado_corrompido' && e.state === 'reloading') {
+      e.weaponReloadTime -= dt;
+      if (e.weaponGroup) e.weaponGroup.rotation.x = .2;
+      if (e.weaponReloadTime <= 0) {
+        const load = Math.min(5 - e.weaponAmmo, e.weaponReserve);
+        e.weaponAmmo += load; e.weaponReserve -= load;
+        e.state = 'recover'; e.recover = .42;
+        if (e.weaponGroup) e.weaponGroup.rotation.x = 0;
+      }
+      continue;
+    }
     if (e.state === 'recover') { e.recover -= dt; if (e.recover <= 0) e.state = hasTarget ? 'chase' : 'search'; continue; }
+    if (e.state === 'hold') { if (seesPlayer && distance >= 8 && distance <= 19) continue; e.state = hasTarget ? 'chase' : 'search'; }
 
+    if (e.type === 'soldado_corrompido' && e.state === 'take_cover' && e.coverTarget) {
+      const cx = e.coverTarget.x - e.group.position.x, cz = e.coverTarget.z - e.group.position.z;
+      const coverDistance = Math.hypot(cx, cz);
+      if (coverDistance < .7) {
+        e.state = 'cover'; e.coverHold = 1.15 + rand() * .6; e.coverTarget = null;
+      } else {
+        const waypoint = navigationTarget(e, e.group.position.x, e.group.position.z, e.coverTarget.x, e.coverTarget.z, .34, dt);
+        const wx = waypoint.x - e.group.position.x, wz = waypoint.z - e.group.position.z;
+        const wl = Math.hypot(wx, wz);
+        if (wl > .05) {
+          const step = Math.min(e.speed * dt * 1.12, wl);
+          const nx = e.group.position.x + wx / wl * step, nz = e.group.position.z + wz / wl * step;
+          if (!enemyBlocked(nx, nz, .34)) { e.group.position.x = nx; e.group.position.z = nz; }
+        }
+      }
+      continue;
+    }
+    if (e.type === 'soldado_corrompido' && e.state === 'cover') {
+      e.coverHold -= dt;
+      if (e.coverHold > 0) continue;
+      e.state = hasTarget ? 'investigate' : 'search';
+    }
+    if (e.type === 'soldado_corrompido' && seesPlayer && e.health < e.maxHealth * .55 && e.coverCooldown <= 0 && e.state !== 'aiming') {
+      const cover = findEnemyCoverPosition(e);
+      e.coverCooldown = 7;
+      if (cover) { e.coverTarget = cover; e.state = 'take_cover'; continue; }
+    }
+    if (e.type === 'soldado_corrompido' && hasTarget) {
+      if (e.weaponAmmo <= 0 && e.weaponReserve > 0) {
+        e.state = 'reloading'; e.weaponReloadTime = 1.55;
+        $('threat-warning').textContent = '⚠ SOLDADO RECARREGANDO';
+        $('threat-warning').classList.remove('hidden'); warningTime = 1.55;
+        continue;
+      }
+      if (e.weaponAmmo <= 0 && e.weaponReserve <= 0) e.rangedRange = 0;
+      if (seesPlayer && distance >= 6.5 && distance <= e.rangedRange && e.fireCooldown <= 0) {
+        e.aimTargetX = px; e.aimTargetY = player.position.y - .55; e.aimTargetZ = pz;
+        e.aimTime = .82 + rand() * .22; e.state = 'aiming';
+        $('threat-warning').textContent = '⚠ SOLDADO CORROMPIDO MIRANDO';
+        $('threat-warning').classList.remove('hidden'); warningTime = Math.max(warningTime, 1.15);
+        playThreatSound();
+        continue;
+      }
+      // O soldado tenta manter distância de combate e só avança quando perde a linha de tiro.
+      if (seesPlayer && distance >= 8 && distance <= 19) {
+        e.state = 'hold'; e.group.position.y = 0;
+        continue;
+      }
+      if (seesPlayer && distance < 8) {
+        const retreatX = e.group.position.x - dx / Math.max(.01, distance) * 5.5;
+        const retreatZ = e.group.position.z - dz / Math.max(.01, distance) * 5.5;
+        const waypoint = navigationTarget(e, e.group.position.x, e.group.position.z, retreatX, retreatZ, .34, dt);
+        const rx = waypoint.x - e.group.position.x, rz = waypoint.z - e.group.position.z;
+        const rl = Math.hypot(rx, rz);
+        if (rl > .05) {
+          const step = Math.min(e.speed * dt * .85, rl);
+          const nx = e.group.position.x + rx / rl * step, nz = e.group.position.z + rz / rl * step;
+          if (!enemyBlocked(nx, nz, .34)) { e.group.position.x = nx; e.group.position.z = nz; }
+        }
+        e.state = 'reposition';
+        continue;
+      }
+    }
     if (seesPlayer && distance <= (e.type === 'rastejador' ? 2.15 : 1.7)) {
       e.state = 'windup'; e.windup = e.type === 'rastejador' ? .58 : .68;
       if (distance < 4.2) {
@@ -1804,6 +2021,7 @@ function updateEffects(dt) {
     if (e.type === 'smoke') { e.phase = (e.phase + dt) % 100; e.object.position.y = e.baseY + Math.sin(e.phase * .65) * .25; e.object.material.opacity = .15 + (Math.sin(e.phase * .4) + 1) * .05; continue; }
     e.life -= dt;
     if (e.type === 'tracer') e.object.material.opacity = Math.max(0, e.life / .055) * .75;
+    if (e.type === 'enemyTracer') e.object.material.opacity = Math.max(0, e.life / .095) * .9;
     if (e.type === 'particle') { e.velocity.y -= dt * 8; e.object.position.addScaledVector(e.velocity, dt); e.object.material.opacity = Math.min(.9, e.life * 2); }
     if (e.type === 'blast') { e.object.scale.setScalar(1 + (.27 - e.life) * 11); e.object.material.opacity = Math.max(0, e.life / .27 * .45); }
     if (e.type === 'casing') {

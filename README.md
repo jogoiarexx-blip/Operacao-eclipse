@@ -1,14 +1,27 @@
 # OPERAÇÃO ECLIPSE — A Guerra dos Esquecidos
 
-**Build 0.5.0 · Missão 01: Cinzas na Estrada · preparada para GitHub Pages**
+**Build 0.6.0 · Missão 01: Cinzas na Estrada · preparada para GitHub Pages**
 
 Protótipo de FPS de campanha para navegador em JavaScript + Three.js 0.169.0, baseado no `GDD_REFERENCIA.md`. A missão 01 inclui investigação do comboio, emboscada, resgate, escolta, defesa do posto, extração e tela de conclusão.
 
-## Novidades da versão 0.5.0
+## Novidades da versão 0.6.0
+
+### Inimigo armado: Soldado Corrompido
+- Novo arquétipo humanoide com fuzil procedural visível nas mãos, capacete, uniforme deteriorado e brilho violeta.
+- Entra na primeira emboscada e retorna na defesa do posto; Errantes e Rastejador continuam como ameaças de combate próximo.
+- Mantém distância, prepara a mira por cerca de um segundo e só então dispara. O aviso visual dá tempo para o jogador sair da linha de tiro ou buscar cobertura.
+- Disparos inimigos usam traçantes, clarão no cano, dano escalonado pela dificuldade e verificação de obstáculos: caminhões, muros e barricadas podem bloquear tiros.
+- O soldado tem carregador de 5 tiros e reserva de 20; recarrega antes de voltar a atirar.
+- Quando ferido, pode procurar uma posição atrás de obstáculos registrados como cobertura.
+- O soldado armado permanece em modelo 3D mesmo à distância para que o fuzil não desapareça na transição para impostor 2D.
+- Checkpoints da primeira emboscada e da defesa recriam o tipo correto de inimigo.
+
+### Mantido da versão 0.5.0
+
 
 ### IA e navegação
 - Navegação A* em grade construída a partir dos obstáculos do cenário.
-- Errantes e Rastejador contornam caminhões, barricadas, caixas e ruínas em vez de tentar atravessá-los.
+- Errantes, Rastejador e Soldado Corrompido contornam caminhões, barricadas, caixas e ruínas em vez de tentar atravessá-los.
 - O operador resgatado usa a mesma navegação para acompanhar Raul e reduzir situações de bloqueio.
 - Rotas são suavizadas e atualizadas em intervalos controlados para limitar custo de CPU.
 
@@ -27,10 +40,10 @@ Protótipo de FPS de campanha para navegador em JavaScript + Three.js 0.169.0, b
 
 ## Fluxo da Missão 01
 1. Investigar o comboio destruído.
-2. Sobreviver à emboscada de três Errantes.
+2. Sobreviver à emboscada de dois Errantes e um Soldado Corrompido armado.
 3. Encontrar e resgatar o operador de rádio.
 4. Escoltar o operador até o posto avançado.
-5. Defender o posto contra dois Errantes e um Rastejador.
+5. Defender o posto contra um Soldado Corrompido armado, um Errante e um Rastejador.
 6. Atravessar o portão e concluir a missão.
 
 ## Controles
@@ -67,9 +80,9 @@ node tests/smoke.cjs
 O smoke test usa simulador mínimo de Three.js/DOM. Ele verifica lógica, não renderiza WebGL. Faça também os testes manuais em `TESTES_MANUAIS.md`.
 
 ## Limitações conhecidas
-- Modelos e animações ainda são procedurais e provisórios.
+- Modelos e animações ainda são procedurais e provisórios; o fuzil do Soldado Corrompido é uma composição de geometria 3D.
 - A navegação A* é uma grade 2D simplificada baseada em colisores circulares; não substitui uma navmesh 3D.
-- A percepção usa linha de visão dos objetos registrados como cobertura e ruído simplificado.
+- A percepção usa linha de visão dos objetos registrados como cobertura e ruído simplificado. A busca de cobertura do Soldado Corrompido depende dos obstáculos com colisores cadastrados.
 - A campanha 02–12 ainda não está implementada.
 - O progresso fica no `localStorage` deste navegador/dispositivo.
 - A CDN exige internet; não há modo offline completo.
