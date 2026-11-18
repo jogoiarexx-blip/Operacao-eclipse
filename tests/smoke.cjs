@@ -95,6 +95,7 @@ assert.equal(evalGame('rainField.geometry.drawCount'),260,'preset alto deve ampl
 evalGame("settings.quality='equilibrado'; applyQuality()");
 assert.equal(evalGame('scene.children.includes(camera)'),true,'arma deve ser filha da câmera presente na cena');
 evalGame('newCampaign()');
+assert.equal(Object.prototype.hasOwnProperty.call(context, 'reloadProgress'), false, 'nova campanha não deve criar variável global de recarga indefinida');
 assert.equal(evalGame('missionPhase'),0);
 evalGame('triggerAmbush()');
 assert.equal(evalGame('enemies.length'),3);
